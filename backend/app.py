@@ -1,93 +1,199 @@
 #!/usr/bin/env python3
 """
 Flask Backend for Port AGV Digital Twin Dashboard
-Provides REST API and WebSocket endpoints for vehicle state, trajectory, and risk heatmap
+Integrates ROS2 real-time data with Flask-SocketIO for web visualization
 """
 
 from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
-import eventlet
-import random
+import threading
 import math
 import time
 from datetime import datetime
+from collections import deque
 
-eventlet.monkey_patch()
+# ROS2 imports
+import rclpy
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
 
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# Simulation state
+# Initialize Socket.IO with threading mode (default)
+socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
+
+# Global vehicle state (thread-safe access)
 vehicle_state = {
     'x': 0.0,
     'y': 0.0,
     'heading': 0.0,
     'speed': 0.0,
     'risk_index': 0.1,
-    'scenario': 'Standard Operation'
+    'scenario': 'Standard Operation',
+    'last_update': 0.0
 }
 
-trajectory_history = []
-MAX_TRAJECTORY_POINTS = 500
+trajectory_history = deque(maxlen=500)
+state_lock = threading.Lock()
 
-# Simulation parameters
-SIMULATION_AREA_SIZE = 100.0  # meters
-UPDATE_INTERVAL = 1.0  # seconds
+# ROS2 configuration - subscribes to AGV odometry from ros_gz_bridge
+ROS2_TOPIC = '/diff_drive/odometry'
+ROS2_MSG_TYPE = 'nav_msgs/msg/Odometry'
 
 
-def simulate_vehicle_motion():
+# ============================================================================
+# ROS2 Integration Section
+# ============================================================================
+
+def quaternion_to_yaw(q):
     """
-    Simulate vehicle motion with random walk
-    TODO: Replace with actual ROS2 /tf or /odom topic subscription
+    Convert quaternion to yaw angle (heading)
+
+    Quaternion → Euler angle conversion for extracting heading from orientation
+
+    Args:
+        q: Quaternion with x, y, z, w components
+
+    Returns:
+        yaw angle in degrees [0, 360)
     """
-    global vehicle_state, trajectory_history
+    siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+    yaw_rad = math.atan2(siny_cosp, cosy_cosp)
 
-    while True:
-        # Random walk motion
-        speed_change = random.uniform(-0.5, 0.5)
-        vehicle_state['speed'] = max(0.0, min(5.0, vehicle_state['speed'] + speed_change))
+    # Convert to degrees and normalize to [0, 360)
+    yaw_deg = math.degrees(yaw_rad)
+    if yaw_deg < 0:
+        yaw_deg += 360.0
 
-        # Update heading with random turn
-        heading_change = random.uniform(-15, 15)
-        vehicle_state['heading'] = (vehicle_state['heading'] + heading_change) % 360
+    return yaw_deg
 
-        # Update position based on speed and heading
-        heading_rad = math.radians(vehicle_state['heading'])
-        dx = vehicle_state['speed'] * math.cos(heading_rad) * UPDATE_INTERVAL
-        dy = vehicle_state['speed'] * math.sin(heading_rad) * UPDATE_INTERVAL
 
-        vehicle_state['x'] += dx
-        vehicle_state['y'] += dy
+class AGVPoseSubscriber(Node):
+    """
+    ROS2 Node for subscribing to AGV pose data from Gazebo simulation
 
-        # Keep vehicle within simulation area
-        vehicle_state['x'] = max(-SIMULATION_AREA_SIZE, min(SIMULATION_AREA_SIZE, vehicle_state['x']))
-        vehicle_state['y'] = max(-SIMULATION_AREA_SIZE, min(SIMULATION_AREA_SIZE, vehicle_state['y']))
+    Gazebo Pose Subscription:
+    - Subscribes to /diff_drive/odometry (bridged from Gazebo via ros_gz_bridge)
+    - Extracts position (x, y), orientation (quaternion → yaw), and velocity
+    - Emits real-time data to Socket.IO clients
+    """
 
-        # Simulate risk index variation
-        vehicle_state['risk_index'] = max(0.0, min(1.0, vehicle_state['risk_index'] + random.uniform(-0.1, 0.1)))
+    def __init__(self):
+        super().__init__('agv_pose_subscriber')
 
-        # Update trajectory history
-        trajectory_history.append({
-            'x': vehicle_state['x'],
-            'y': vehicle_state['y'],
-            'timestamp': time.time()
-        })
+        # Subscribe to odometry topic from ros_gz_bridge
+        self.subscription = self.create_subscription(
+            Odometry,
+            ROS2_TOPIC,
+            self.odometry_callback,
+            10
+        )
 
-        if len(trajectory_history) > MAX_TRAJECTORY_POINTS:
-            trajectory_history.pop(0)
+        self.get_logger().info(f'Subscribed to {ROS2_TOPIC}')
+        self.get_logger().info('Waiting for AGV odometry data from Gazebo...')
 
-        # Emit vehicle pose via WebSocket
-        socketio.emit('vehicle_pose', {
-            'x': vehicle_state['x'],
-            'y': vehicle_state['y'],
-            'heading': vehicle_state['heading'],
+    def odometry_callback(self, msg):
+        """
+        Callback for odometry messages from Gazebo
+
+        Processes incoming ROS2 Odometry messages:
+        1. Extract x, y position
+        2. Convert quaternion orientation to yaw (heading)
+        3. Calculate linear velocity magnitude (speed)
+        4. Update global state (thread-safe)
+        5. Emit to Socket.IO clients
+        """
+        global vehicle_state, trajectory_history
+
+        # Extract position (x, y) from pose
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+
+        # Extract orientation and convert quaternion to yaw (heading)
+        q = msg.pose.pose.orientation
+        heading = quaternion_to_yaw(q)
+
+        # Extract linear velocity magnitude (speed)
+        vx = msg.twist.twist.linear.x
+        vy = msg.twist.twist.linear.y
+        speed = math.sqrt(vx**2 + vy**2)
+
+        # Update global vehicle state (thread-safe)
+        with state_lock:
+            vehicle_state['x'] = x
+            vehicle_state['y'] = y
+            vehicle_state['heading'] = heading
+            vehicle_state['speed'] = speed
+            vehicle_state['last_update'] = time.time()
+
+            # Update trajectory history
+            trajectory_history.append({
+                'x': x,
+                'y': y,
+                'timestamp': time.time()
+            })
+
+        # Socket.IO Emission: Emit real-time pose data to all connected clients
+        pose_data = {
+            'x': x,
+            'y': y,
+            'heading': heading,
             'risk': vehicle_state['risk_index']
-        })
+        }
 
-        eventlet.sleep(UPDATE_INTERVAL)
+        # Emit to all connected clients
+        socketio.emit('vehicle_pose', pose_data, namespace='/')
 
+
+def ros2_spin_thread(node):
+    """
+    Run ROS2 executor in background thread
+
+    Threading: Keeps ROS2 node alive and processing callbacks without blocking Flask
+    """
+    try:
+        rclpy.spin(node)
+    except Exception as e:
+        print(f'ROS2 spin error: {e}')
+    finally:
+        node.destroy_node()
+
+
+def initialize_ros2():
+    """
+    Initialize ROS2 node and start background thread
+
+    Returns:
+        ROS2 node instance or None if initialization fails
+    """
+    try:
+        rclpy.init()
+        node = AGVPoseSubscriber()
+
+        # Start ROS2 executor in background thread (non-blocking)
+        ros_thread = threading.Thread(target=ros2_spin_thread, args=(node,), daemon=True)
+        ros_thread.start()
+
+        print(f'✓ ROS2 node initialized and subscribed to {ROS2_TOPIC}')
+        return node
+
+    except Exception as e:
+        print(f'✗ Failed to initialize ROS2: {e}')
+        print('  WARNING: ROS2 integration unavailable')
+        print('  Possible causes:')
+        print('    - ROS2 environment not sourced')
+        print('    - ros_gz_bridge not running')
+        print('    - Gazebo simulation not started')
+        print('  Flask server will continue without ROS2 data')
+        return None
+
+
+# ============================================================================
+# Flask REST API Endpoints
+# ============================================================================
 
 @app.route('/')
 def index():
@@ -100,29 +206,30 @@ def get_vehicle_state():
     """
     GET /vehicle_state
     Returns current vehicle state including pose, speed, and risk index
-    TODO: Replace with actual ROS2 vehicle state topic
+    Data sourced from ROS2 /diff_drive/odometry topic
     """
-    return jsonify({
-        'pose': {
-            'x': vehicle_state['x'],
-            'y': vehicle_state['y'],
-            'heading': vehicle_state['heading']
-        },
-        'speed': vehicle_state['speed'],
-        'risk_index': vehicle_state['risk_index'],
-        'scenario': vehicle_state['scenario'],
-        'timestamp': time.time()
-    })
+    with state_lock:
+        return jsonify({
+            'pose': {
+                'x': vehicle_state['x'],
+                'y': vehicle_state['y'],
+                'heading': vehicle_state['heading']
+            },
+            'speed': vehicle_state['speed'],
+            'risk_index': vehicle_state['risk_index'],
+            'scenario': vehicle_state['scenario'],
+            'timestamp': vehicle_state['last_update']
+        })
 
 
 @app.route('/trajectory')
 def get_trajectory():
     """
     GET /trajectory
-    Returns historical trajectory points
-    TODO: Replace with actual ROS2 path history or recorded odometry
+    Returns historical trajectory points from ROS2 odometry
     """
-    return jsonify(trajectory_history)
+    with state_lock:
+        return jsonify(list(trajectory_history))
 
 
 @app.route('/risk/heatmap')
@@ -132,15 +239,19 @@ def get_risk_heatmap():
     Returns risk heatmap data for visualization
     TODO: Replace with actual InSAR risk data or geospatial risk analysis
     """
+    import random
+
     # Generate sample heatmap data points
     heatmap_data = []
 
     # Create a grid of risk points around the simulation area
     grid_size = 20
+    simulation_area_size = 100.0
+
     for i in range(grid_size):
         for j in range(grid_size):
-            x = (i - grid_size/2) * (SIMULATION_AREA_SIZE / grid_size) * 2
-            y = (j - grid_size/2) * (SIMULATION_AREA_SIZE / grid_size) * 2
+            x = (i - grid_size/2) * (simulation_area_size / grid_size) * 2
+            y = (j - grid_size/2) * (simulation_area_size / grid_size) * 2
 
             # Simulate risk hotspots with distance-based risk
             distance_to_center = math.sqrt(x**2 + y**2)
@@ -159,17 +270,23 @@ def get_risk_heatmap():
     return jsonify(heatmap_data)
 
 
+# ============================================================================
+# Socket.IO Event Handlers
+# ============================================================================
+
 @socketio.on('connect')
 def handle_connect():
     """Handle WebSocket client connection"""
     print(f'Client connected: {datetime.now().isoformat()}')
+
     # Send initial vehicle pose
-    emit('vehicle_pose', {
-        'x': vehicle_state['x'],
-        'y': vehicle_state['y'],
-        'heading': vehicle_state['heading'],
-        'risk': vehicle_state['risk_index']
-    })
+    with state_lock:
+        emit('vehicle_pose', {
+            'x': vehicle_state['x'],
+            'y': vehicle_state['y'],
+            'heading': vehicle_state['heading'],
+            'risk': vehicle_state['risk_index']
+        })
 
 
 @socketio.on('disconnect')
@@ -178,6 +295,10 @@ def handle_disconnect():
     print(f'Client disconnected: {datetime.now().isoformat()}')
 
 
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
 if __name__ == '__main__':
     print("=" * 60)
     print("🚛 AGV Digital Twin Backend Server")
@@ -185,8 +306,11 @@ if __name__ == '__main__':
     print(f"Starting server at http://0.0.0.0:5000")
     print(f"Dashboard: http://localhost:5000")
     print(f"WebSocket endpoint: ws://localhost:5000/socket.io/")
-    print(f"Simulation area: ±{SIMULATION_AREA_SIZE}m")
-    print(f"Update interval: {UPDATE_INTERVAL}s")
+    print("=" * 60)
+    print("\nROS2 Integration:")
+    print(f"  Topic: {ROS2_TOPIC}")
+    print(f"  Type:  {ROS2_MSG_TYPE}")
+    print(f"  Model: diff_drive (from ros_gz_project_template)")
     print("=" * 60)
     print("\nAvailable endpoints:")
     print("  GET  /                 - Dashboard UI")
@@ -195,10 +319,24 @@ if __name__ == '__main__':
     print("  GET  /risk/heatmap     - Risk heatmap data")
     print("  WS   /socket.io/       - Real-time vehicle pose")
     print("=" * 60)
+
+    # Initialize ROS2 integration
+    print("\nInitializing ROS2 integration...")
+    ros_node = initialize_ros2()
+
+    if ros_node:
+        print("✓ ROS2 integration active - receiving data from Gazebo")
+    else:
+        print("✗ ROS2 integration unavailable - Flask server running without ROS2")
+
     print("\nPress Ctrl+C to stop the server\n")
+    print("=" * 60)
 
-    # Start vehicle simulation in background
-    eventlet.spawn(simulate_vehicle_motion)
-
-    # Run Flask-SocketIO server
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    # Run Flask-SocketIO server with threading mode
+    try:
+        socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+    finally:
+        if ros_node:
+            rclpy.shutdown()
