@@ -9,8 +9,6 @@
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container-multi-stack/model.config
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container-multi-stack/model.sdf
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container40/CONTAINER40.dae
-/home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container40/Container-40.skp
-/home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container40/model (copy).sdf
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container40/model.config
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/container40/model.sdf
 /home/loong/AGV_sim/src/install/harbour_assets_description/share/harbour_assets_description/models/crane1/crane/Fencing_Diamond_Mesh.png

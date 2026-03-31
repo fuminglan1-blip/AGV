@@ -397,9 +397,12 @@ def control_manual():
     if action not in VALID_MANUAL_ACTIONS:
         return jsonify({'error': f'Unknown action: {action}'}), 400
 
-    msg = String()
-    msg.data = action
-    _ros2_node.control_cmd_pub.publish(msg)
+    try:
+        msg = String()
+        msg.data = action
+        _ros2_node.control_cmd_pub.publish(msg)
+    except Exception as e:
+        return jsonify({'error': f'ROS2 publish failed: {e}'}), 503
 
     # Update mode to manual (unless a mission is running)
     with state_lock:
@@ -413,14 +416,15 @@ def control_manual():
 def control_stop():
     """Emergency stop — cancels mission and stops vehicle."""
     if _ros2_node:
-        # Cancel any running mission
-        cmd = String()
-        cmd.data = 'cancel'
-        _ros2_node.mission_cmd_pub.publish(cmd)
-        # Stop the vehicle
-        stop = String()
-        stop.data = 'reset_all'
-        _ros2_node.control_cmd_pub.publish(stop)
+        try:
+            cmd = String()
+            cmd.data = 'cancel'
+            _ros2_node.mission_cmd_pub.publish(cmd)
+            stop = String()
+            stop.data = 'reset_all'
+            _ros2_node.control_cmd_pub.publish(stop)
+        except Exception:
+            pass
 
     with state_lock:
         mission_state['mode'] = 'idle'
@@ -444,9 +448,12 @@ def mission_start():
             'available': list(DEMO_ROUTES.keys()),
         }), 400
 
-    msg = String()
-    msg.data = f'start:{route_name}'
-    _ros2_node.mission_cmd_pub.publish(msg)
+    try:
+        msg = String()
+        msg.data = f'start:{route_name}'
+        _ros2_node.mission_cmd_pub.publish(msg)
+    except Exception as e:
+        return jsonify({'error': f'ROS2 publish failed: {e}'}), 503
 
     return jsonify({'status': 'started', 'route_name': route_name})
 
@@ -455,9 +462,12 @@ def mission_start():
 def mission_cancel():
     """Cancel the running mission."""
     if _ros2_node:
-        msg = String()
-        msg.data = 'cancel'
-        _ros2_node.mission_cmd_pub.publish(msg)
+        try:
+            msg = String()
+            msg.data = 'cancel'
+            _ros2_node.mission_cmd_pub.publish(msg)
+        except Exception:
+            pass
 
     return jsonify({'status': 'cancelled'})
 

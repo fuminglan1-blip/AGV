@@ -70,7 +70,7 @@ ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 
 ```bash
 # Integration check
-./verify_integration.sh
+./scripts/verify_integration.sh
 
 # ROS2 topics
 ros2 topic list | grep diff_drive
@@ -115,7 +115,6 @@ Frames: `diff_drive/odom` (odometry), `diff_drive` (base), `diff_drive/lidar_lin
 ## Configuration
 
 - `web_dashboard/config.yaml` — Server port, ROS2 topic selection, map center, heatmap grid size
-- `backend/config/vehicle_source.yaml` — Vehicle type switch (agv_ackermann vs diff_drive)
 - `ros_gz_example_bringup/config/ros_gz_example_bridge.yaml` — Gazebo↔ROS2 topic mappings
 
 ## Environment

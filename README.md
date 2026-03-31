@@ -1,142 +1,127 @@
-# AGV Digital Twin - Port Harbour Simulation
+# Port AGV Digital Twin — Harbour Simulation
 
-A ROS2 + Gazebo + Web-based Digital Twin system for Port AGV simulation with real-time visualization.
+ROS 2 Humble + Gazebo Fortress + Flask + Leaflet real-time digital twin for port AGV simulation.
+
+**Current primary vehicle: `agv_ackermann`** (Ackermann-steered port truck)
 
 ## Project Structure
 
 ```
-.
-├── ros_gz_project_template/     # ROS2 + Gazebo simulation (diff_drive AGV)
-├── harbour_assets_description/  # Port harbour 3D models and assets
-├── web_dashboard/               # Flask + Socket.IO web visualization
-├── Gazebo_Harbour_Models/       # Third-party harbour model repository (reference only)
-├── docs/                        # Documentation
-└── CLAUDE.md                    # AI assistant guidance
+AGV_sim/src/
+├── web_dashboard/                  # Flask + Socket.IO backend & frontend
+│   ├── app.py                      #   Main server (ROS2 node + REST + WebSocket)
+│   ├── risk_layer.py               #   Synthetic risk grid
+│   ├── risk_fusion.py              #   Risk assessment fusion
+│   ├── agv_mission_controller.py   #   Waypoint-following mission executor
+│   ├── config.yaml                 #   Server & ROS2 topic config
+│   ├── config/demo_routes.yaml     #   Predefined demo routes
+│   ├── start_server.sh             #   Startup script
+│   ├── templates/dashboard.html    #   Dashboard UI
+│   └── static/                     #   Leaflet, Socket.IO (offline)
+│
+├── agv_manual_controller.py        # Persistent-state manual Ackermann controller
+├── agv_manual_config.yaml          # Controller config (wheel_base, limits, steps)
+│
+├── ros_gz_project_template/        # ROS2 + Gazebo simulation packages (read-only base)
+│   ├── ros_gz_example_bringup/     #   Launch files + bridge configs
+│   ├── ros_gz_example_description/ #   Robot models (diff_drive, agv_ackermann)
+│   └── ros_gz_example_gazebo/      #   World files (harbour_diff_drive.sdf)
+│
+├── harbour_assets_description/     # Custom ROS2 package — port 3D models
+│   └── models/                     #   crane1, container40, container-multi-stack
+│
+├── docs/                           # Documentation
+├── scripts/                        # Verification & utility scripts
+├── third_party/                    # Third-party reference repos
+└── archive_pending_review/         # Archived deprecated files
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Ubuntu 22.04
-- ROS2 Humble
-- Gazebo Fortress (Ignition Gazebo)
-- Python 3.10+
+- Ubuntu 22.04, ROS 2 Humble, Gazebo Fortress, Python 3.10+
+- Python packages: flask, flask-cors, flask-socketio, pyyaml
 
-### 1. Build the Workspace
+### 1. Build
 
 ```bash
-# Source ROS2
+cd AGV_sim/src
 source /opt/ros/humble/setup.bash
-
-# Build all packages
 colcon build --symlink-install
-
-# Source the workspace
 source install/setup.bash
 ```
 
-### 2. Launch Harbour Simulation
+### 2. Launch Gazebo
 
 ```bash
-# Terminal 1: Launch Gazebo with harbour scene
 ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 ```
 
-### 3. Start Web Dashboard
+### 3. Start Control Layer
 
 ```bash
-# Terminal 2: Start Flask backend
+# Terminal 2: manual controller (accepts keyboard + remote commands)
+python3 agv_manual_controller.py
+```
+
+### 4. Start Web Dashboard
+
+```bash
+# Terminal 3: Flask backend + mission controller
 cd web_dashboard
+python3 agv_mission_controller.py &
 ./start_server.sh
 ```
 
-### 4. Access Dashboard
+### 5. Open Dashboard
 
-Open browser: `http://localhost:5000`
+Browser: `http://localhost:5000`
 
-## Features
-
-### Simulation
-- Differential drive AGV in port harbour environment
-- Static harbour models (cranes, containers, port facilities)
-- Real-time odometry and sensor data via ROS2
-
-### Web Dashboard
-- Real-time AGV position tracking
-- Trajectory visualization
-- Risk heatmap overlay
-- Offline operation (no external CDN dependencies)
-
-## Development
-
-### Testing ROS2 Topics
-
-```bash
-# List topics
-ros2 topic list | grep diff_drive
-
-# Echo odometry
-ros2 topic echo /diff_drive/odometry --once
-
-# Check topic frequency
-ros2 topic hz /diff_drive/odometry
-
-# Control AGV
-ros2 topic pub /diff_drive/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 1.0}, angular: {z: 0.5}}"
-```
-
-### Testing Web API
-
-```bash
-# Check vehicle state
-curl http://localhost:5000/vehicle_state
-
-# Check trajectory
-curl http://localhost:5000/trajectory
-
-# Check heatmap
-curl http://localhost:5000/risk/heatmap
-```
+- **Vehicle Control** panel: W/S/A/D + SPACE/R/Q (keyboard or buttons)
+- **Demo Routes**: one-click predefined waypoint routes
+- **Risk Heatmap**: real-time risk overlay
 
 ## Architecture
 
 ```
-Gazebo Simulation (harbour_diff_drive.sdf)
-    ↓ ros_gz_bridge
-ROS2 Topics (/diff_drive/odometry, /diff_drive/cmd_vel, etc.)
-    ↓ rclpy subscription
-Flask Backend (ROS2 Node + Web Server)
-    ↓ Socket.IO (WebSocket/Polling)
-Web Dashboard (Browser)
+Browser (dashboard.html)
+    ↓ REST + Socket.IO
+Flask app.py (ROS2 node)
+    ├── /control/manual  → publishes /agv/control_cmd
+    ├── /mission/start   → publishes /agv/mission_cmd
+    ├── subscribes: /agv/odometry, /agv/mission_status
+    └── risk_layer + risk_fusion pipeline
+            ↓                               ↓
+agv_manual_controller          agv_mission_controller
+    (sole /agv/cmd_vel publisher)    (waypoint follower)
+            ↓
+AckermannSteering plugin (Gazebo)
 ```
 
-## Current Stage
+## Key APIs
 
-**Phase 1: Minimal Viable Integration** ✓
-- ✅ Harbour static models integrated
-- ✅ diff_drive AGV operational
-- ✅ Web dashboard connected
-- ✅ Offline operation enabled
-
-**Phase 2: Advanced Features** (Future)
-- ⏳ InSAR risk assessment
-- ⏳ GNSS integration
-- ⏳ Dynamic terrain deformation
-- ⏳ Multi-vehicle coordination
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/vehicle_state` | GET | Current pose, speed, risk |
+| `/trajectory` | GET | Historical trajectory (max 500 pts) |
+| `/risk/heatmap` | GET | Risk grid data |
+| `/control/manual` | POST | `{"action":"speed_up"}` etc. |
+| `/control/stop` | POST | Emergency stop |
+| `/mission/start` | POST | `{"route_name":"standard_operation"}` |
+| `/mission/cancel` | POST | Cancel running mission |
+| `/mission/status` | GET | Current mode/route/progress |
 
 ## Documentation
 
-- [Integration Plan](docs/integration_plan.md) - Current phase objectives
-- [CLAUDE.md](CLAUDE.md) - AI assistant guidance
-- [AGENTS.md](AGENTS.md) - Development rules and constraints
-- [Web Dashboard README](web_dashboard/README_OFFLINE.md) - Frontend setup
+- [Architecture](docs/architecture.md) — Module responsibilities
+- [Run Guide](docs/run_guide.md) — Step-by-step startup
+- [Quick Start](docs/quickstart.md) — Original quick start guide
+- [Integration Plan](docs/integration_plan.md) — Phase 1 scope
+- [Cleanup Report](docs/cleanup_report.md) — Recent file reorganization
+- [CLAUDE.md](CLAUDE.md) — AI assistant guidance
+- [AGENTS.md](AGENTS.md) — Development constraints
 
 ## License
 
 See individual component licenses.
-
-## Contributing
-
-See [AGENTS.md](AGENTS.md) for development guidelines and constraints.
