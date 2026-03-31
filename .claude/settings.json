@@ -9,7 +9,10 @@
       "Bash(curl -s http://localhost:5000/health)",
       "Bash(curl -s http://localhost:5000/risk/current)",
       "Bash(curl -s http://localhost:5000/risk/heatmap)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Heatmap points: {len\\(d\\)}, first: {d[0]}''''\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Heatmap points: {len\\(d\\)}, first: {d[0]}''''\\)\")",
+      "Bash(timeout 5 python3 app.py)",
+      "Bash(ros2 interface:*)",
+      "Bash(chmod +x /home/loong/AGV_sim/src/agv_manual_controller.py)"
     ]
   }
 }

@@ -262,6 +262,16 @@
                     <span>Show Grid</span>
                 </label>
             </div>
+            <div class="control-group" style="margin-top: 10px;">
+                <button id="btnClearTrajectory" style="
+                    width: 100%; padding: 8px; border: 1px solid #666;
+                    background: #333; color: #e0e0e0; border-radius: 4px;
+                    cursor: pointer; font-size: 0.9em;
+                " onmouseover="this.style.background='#444'"
+                   onmouseout="this.style.background='#333'">
+                    Clear Trajectory
+                </button>
+            </div>
         </div>
 
         <div class="legend">
@@ -286,21 +296,21 @@
     <script>
         // Configuration
         const CONFIG = {
-            mapCenter: [1.2821, 103.858], // Singapore coordinates
-            mapZoom: 16,
-            backendUrl: 'http://localhost:5000',
+            mapCenter: [0, 0],   // Gazebo origin (CRS.Simple: [y, x])
+            mapZoom: 2,
             maxTrajectoryPoints: 500
         };
 
-        // Initialize Leaflet map
-        const map = L.map('map').setView(CONFIG.mapCenter, CONFIG.mapZoom);
+        // Initialize Leaflet map with CRS.Simple (direct meter coordinates)
+        const map = L.map('map', {
+            crs: L.CRS.Simple,
+            minZoom: -2,
+            maxZoom: 6
+        }).setView(CONFIG.mapCenter, CONFIG.mapZoom);
 
-        // Add simple canvas-based background (no external tiles needed)
-        // Create a simple grid background without external dependencies
+        // Background covering simulation area
         const canvas = L.canvas();
-
-        // Add a simple colored background layer
-        const bounds = [[-90, -180], [90, 180]];
+        const bounds = [[-200, -200], [200, 200]];
         L.rectangle(bounds, {
             color: '#2d3436',
             fillColor: '#34495e',
@@ -309,10 +319,10 @@
             renderer: canvas
         }).addTo(map);
 
-        // Create custom AGV icon
+        // Create custom AGV icon (inner div handles rotation independently)
         const agvIcon = L.divIcon({
             className: 'agv-marker',
-            html: `<div style="
+            html: `<div class="agv-icon-inner" style="
                 width: 30px;
                 height: 30px;
                 background: #4CAF50;
@@ -323,6 +333,7 @@
                 align-items: center;
                 justify-content: center;
                 font-size: 16px;
+                transition: transform 0.1s linear;
             ">🚛</div>`,
             iconSize: [30, 30],
             iconAnchor: [15, 15]
@@ -345,15 +356,10 @@
             opacity: 0.7
         }).addTo(map);
 
-        // Helper: Convert x,y to lat/lng (adjust based on your coordinate system)
+        // Convert Gazebo (x, y) to Leaflet [lat, lng] for CRS.Simple
+        // CRS.Simple convention: lat=y (up), lng=x (right)
         function xyToLatLng(x, y) {
-            // Simple offset conversion - adjust these values based on your simulation area
-            const latOffset = 0.0001;
-            const lngOffset = 0.0001;
-            return [
-                CONFIG.mapCenter[0] + (y * latOffset),
-                CONFIG.mapCenter[1] + (x * lngOffset)
-            ];
+            return [y, x];
         }
 
         // Helper: Get risk class based on value
@@ -440,9 +446,10 @@
                 agvMarker.setLatLng(latLng);
             }
 
-            // Rotate marker based on heading (if needed)
+            // Rotate inner icon (independent from Leaflet's position transform)
             if (agvMarker._icon) {
-                agvMarker._icon.style.transform += ` rotate(${heading}deg)`;
+                const inner = agvMarker._icon.querySelector('.agv-icon-inner');
+                if (inner) inner.style.transform = `rotate(${heading}deg)`;
             }
 
             // Update trajectory
@@ -476,7 +483,7 @@
         // REST API: Fetch vehicle state
         async function fetchVehicleState() {
             try {
-                const response = await fetch(`${CONFIG.backendUrl}/vehicle_state`);
+                const response = await fetch(`/vehicle_state`);
                 const data = await response.json();
 
                 if (data.speed !== undefined) {
@@ -508,7 +515,7 @@
         // REST API: Fetch and display trajectory history
         async function fetchTrajectory() {
             try {
-                const response = await fetch(`${CONFIG.backendUrl}/trajectory`);
+                const response = await fetch(`/trajectory`);
                 const data = await response.json();
 
                 if (Array.isArray(data)) {
@@ -523,7 +530,7 @@
         // REST API: Fetch and display risk heatmap
         async function fetchHeatmap() {
             try {
-                const response = await fetch(`${CONFIG.backendUrl}/risk/heatmap`);
+                const response = await fetch(`/risk/heatmap`);
                 const data = await response.json();
 
                 // Remove existing heatmap
@@ -554,7 +561,7 @@
                     heatmapLayer = L.heatLayer(heatmapData, {
                         radius: 25,
                         blur: 15,
-                        maxZoom: 17,
+                        maxZoom: 6,
                         max: 1.0,
                         gradient: {
                             0.0: '#4CAF50',
@@ -580,7 +587,7 @@
             const gridLines = [];
 
             // Create vertical and horizontal grid lines
-            const step = 0.001; // Adjust grid spacing
+            const step = 10; // 10 meters
 
             for (let lat = Math.floor(bounds.getSouth() / step) * step;
                  lat <= bounds.getNorth(); lat += step) {
@@ -631,6 +638,13 @@
             }
         });
 
+        // Clear trajectory (local + backend)
+        document.getElementById('btnClearTrajectory').addEventListener('click', async () => {
+            trajectoryPoints = [];
+            trajectoryPolyline.setLatLngs([]);
+            try { await fetch('/trajectory/clear', { method: 'POST' }); } catch(e) {}
+        });
+
         // Initialize dashboard
         async function initialize() {
             console.log('Initializing AGV Dashboard...');
@@ -643,9 +657,8 @@
             await fetchTrajectory();
             await fetchHeatmap();
 
-            // Periodic updates for REST endpoints
-            setInterval(fetchVehicleState, 5000); // Update every 5 seconds
-            setInterval(fetchHeatmap, 30000); // Update heatmap every 30 seconds
+            // Periodic update for vehicle state (speed/scenario in sidebar)
+            setInterval(fetchVehicleState, 5000);
         }
 
         // Start the dashboard

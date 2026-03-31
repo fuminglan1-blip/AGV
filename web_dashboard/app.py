@@ -90,8 +90,16 @@ vehicle_state: dict = {
 trajectory_history: deque = deque(maxlen=500)
 state_lock = threading.Lock()
 
-# ROS2 topic (matches ros_gz_bridge config)
-ROS2_TOPIC = '/diff_drive/odometry'
+# Load configuration from config.yaml
+_cfg_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+try:
+    with open(_cfg_path, 'r') as _f:
+        _cfg = yaml.safe_load(_f)
+except Exception:
+    _cfg = {}
+
+# ROS2 topic from config (default falls back to diff_drive for compatibility)
+ROS2_TOPIC = _cfg.get('ros2', {}).get('topic', '/diff_drive/odometry')
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +277,14 @@ def get_trajectory():
         return jsonify(list(trajectory_history))
 
 
+@app.route('/trajectory/clear', methods=['POST'])
+def clear_trajectory():
+    """Clear trajectory history (e.g. on vehicle switch or manual reset)."""
+    with state_lock:
+        trajectory_history.clear()
+    return jsonify({'status': 'cleared'})
+
+
 @app.route('/risk/current')
 def get_risk_current():
     """Current risk assessment at vehicle position."""
@@ -353,7 +369,7 @@ if __name__ == '__main__':
     print('    WS   /socket.io/       Real-time vehicle_pose events')
     print()
     print('  Pipeline:')
-    print('    /diff_drive/odometry → terrain_query → risk_fusion → WS push')
+    print(f'    {ROS2_TOPIC} → terrain_query → risk_fusion → WS push')
     print('=' * 60)
 
     ros_node = initialize_ros2()

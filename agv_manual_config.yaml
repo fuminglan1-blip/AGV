@@ -1,0 +1,27 @@
+# agv_manual_config.yaml
+# Configuration for agv_manual_controller.py
+# Geometry values match agv_ackermann model.sdf
+
+# Vehicle geometry
+wheel_base: 3.0            # front-to-rear axle distance (m)
+
+# Speed limits (conservative for manual driving)
+max_speed: 3.0             # max forward speed (m/s)
+max_reverse_speed: 1.0     # max reverse speed (m/s)
+
+# Steering limit (slightly under model's 0.6 rad hard stop)
+max_steer_angle: 0.55      # max steering angle (rad ≈ 31.5°)
+
+# Rate limits (smooth transitions)
+max_accel: 1.5             # max speed change rate (m/s²)
+max_steer_rate: 0.3        # max steering angle change rate (rad/s)
+
+# Input steps (per keypress)
+speed_step: 0.2            # speed increment per w/s press (m/s)
+steer_step: 0.05           # steer increment per a/d press (rad ≈ 2.9°)
+
+# Control loop
+publish_rate: 20           # cmd_vel publish frequency (Hz)
+
+# ROS2 topic
+cmd_vel_topic: /agv/cmd_vel

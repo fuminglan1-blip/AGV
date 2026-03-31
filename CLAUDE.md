@@ -4,184 +4,121 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Port AGV Digital Twin** system that integrates ROS2 Humble, Gazebo Fortress simulation, and a web-based dashboard for real-time visualization. The system consists of two main components:
+**Port AGV Digital Twin** — ROS2 Humble + Gazebo Fortress simulation with a Flask web dashboard for real-time visualization. Currently in **Phase 1: Minimal Viable Integration**.
 
-1. **ROS2 + Gazebo Simulation** (`ros_gz_project_template/`) - A differential drive AGV simulation
-2. **Flask Web Dashboard** (`backend/`) - Real-time web visualization with Socket.IO
+Three main components:
+1. **ROS2 + Gazebo Simulation** (`ros_gz_project_template/`) — Differential drive AGV in a port harbour scene. **Read-only; do not modify.**
+2. **Harbour Assets** (`harbour_assets_description/`) — Custom ROS2 package providing port 3D models (crane, containers) to Gazebo via `GZ_SIM_RESOURCE_PATH`.
+3. **Web Dashboard** (`web_dashboard/`) — Flask + Socket.IO + ROS2 node hybrid. This is the **active backend** (the `backend/` directory is deprecated).
 
 ## Architecture
 
-### Data Flow
 ```
-Gazebo Simulation (diff_drive model)
-    ↓ publishes via ros_gz_bridge
-ROS2 Topic: /diff_drive/odometry (nav_msgs/msg/Odometry)
-    ↓ subscribed by
-Flask Backend (ROS2 Node: agv_pose_subscriber)
-    ↓ emits via Socket.IO
-Web Dashboard (Browser)
+Gazebo (harbour_diff_drive.sdf world)
+    ↓ ros_gz_bridge (config: ros_gz_example_bringup/config/ros_gz_example_bridge.yaml)
+ROS2 Topics: /agv/odometry (primary), /diff_drive/odometry (fallback)
+    ↓ rclpy subscription (AGVPoseSubscriber node)
+web_dashboard/app.py (Flask-SocketIO, threading mode)
+    ├── risk_layer.py    → static 200x200 risk grid with port hotspots
+    └── risk_fusion.py   → combines terrain risk + gradient → risk_score + risk_state
+    ↓ Socket.IO emit (vehicle_pose event)
+Browser Dashboard (templates/dashboard.html)
 ```
 
-### Key Integration Points
+**Threading model**: Main thread runs Flask-SocketIO (threading mode, NOT eventlet). Background thread runs `rclpy.spin()`. Shared state (`vehicle_state`, `trajectory_history`) is protected by `state_lock`.
 
-- **ros_gz_bridge**: Bridges Gazebo topics to ROS2 topics (configured in `ros_gz_project_template/ros_gz_example_bringup/config/ros_gz_example_bridge.yaml`)
-- **Flask ROS2 Node**: `backend/app.py` runs both Flask-SocketIO server and ROS2 node in separate threads
-- **Thread Safety**: Global `vehicle_state` and `trajectory_history` protected by `state_lock` for cross-thread access
-
-### Backend Architecture (`backend/app.py`)
-
-The Flask backend is a **hybrid ROS2/Web application**:
-
-- **Main Thread**: Flask-SocketIO server (threading mode, NOT eventlet)
-- **Background Thread**: ROS2 executor (`rclpy.spin()`) running `AGVPoseSubscriber` node
-- **Communication**: ROS2 callbacks update global state, Socket.IO emits to all connected clients
-
-**Critical**: The backend MUST be run with ROS2 environment sourced. It will start even without ROS2, but won't receive data.
+**Critical**: The backend MUST be run with ROS2 environment sourced. It starts without ROS2 but won't receive data.
 
 ## Development Commands
 
-### Building and Running the Simulation
+### Build (from workspace root `AGV_sim/src/`)
 
 ```bash
-# Build ROS2 workspace (from ros_gz_project_template/)
-cd ros_gz_project_template
 source /opt/ros/humble/setup.bash
-colcon build
+colcon build --symlink-install
 source install/setup.bash
-
-# Launch Gazebo simulation with diff_drive AGV
-ros2 launch ros_gz_example_bringup diff_drive.launch.py
 ```
 
-### Running the Web Dashboard
+Expected output: `Summary: 5 packages finished`
+
+### Launch Simulation
 
 ```bash
-# Start Flask backend (MUST source ROS2 first)
-cd backend
-source /opt/ros/humble/setup.bash
-python3 app.py
+# Harbour scene with AGV (main launch file)
+ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 
-# Or use the startup script
+# Without RViz (saves resources)
+ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py rviz:=false
+```
+
+### Run Web Dashboard
+
+```bash
+cd web_dashboard
 ./start_server.sh
+# Dashboard at http://localhost:5000
 ```
 
-Access dashboard at: `http://localhost:5000`
-
-### Testing and Debugging
+### Control AGV
 
 ```bash
-# Check if ROS2 topics are publishing
-source /opt/ros/humble/setup.bash
-ros2 topic list | grep diff_drive
-ros2 topic echo /diff_drive/odometry --once
-ros2 topic hz /diff_drive/odometry
+ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 1.0}, angular: {z: 0.5}}"
+```
 
-# Test Flask REST API
+### Verify / Debug
+
+```bash
+# Integration check
+./verify_integration.sh
+
+# ROS2 topics
+ros2 topic list | grep diff_drive
+ros2 topic hz /diff_drive/odometry
+ros2 topic echo /diff_drive/odometry --once
+
+# REST API
 curl http://localhost:5000/vehicle_state
 curl http://localhost:5000/trajectory
 curl http://localhost:5000/risk/heatmap
-
-# Check if Flask is running
-ps aux | grep "python3 app.py"
-ss -tuln | grep 5000
-
-# Test Socket.IO connection
-curl 'http://localhost:5000/socket.io/?EIO=4&transport=polling'
-```
-
-### Controlling the AGV
-
-```bash
-# Publish velocity commands to move the AGV
-ros2 topic pub /diff_drive/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 1.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.5}}"
 ```
 
 ## Important Constraints
 
-### DO NOT Modify ros_gz_project_template
+- **`ros_gz_project_template/` is read-only.** All integration work goes in `web_dashboard/` or new packages.
+- **Offline operation required.** All JS/CSS libraries live in `web_dashboard/static/`. No CDN or external network dependencies. New frontend deps must be downloaded to `static/`.
+- **Threading mode only.** Do NOT use eventlet. Socket.IO emits from ROS2 callbacks use `socketio.emit(..., namespace='/')`.
+- **Phase 1 scope only.** Do not add InSAR, GNSS, dynamic terrain, multi-vehicle, or complex vehicle models — those are Phase 2+.
+- See `AGENTS.md` for the full constraint list and development workflow rules.
 
-The `ros_gz_project_template/` directory is a **read-only reference**. All integration work must be done in `backend/`. You can:
-- ✅ Read files to understand topic names, message types, frame IDs
-- ✅ Subscribe to its published topics
-- ❌ Modify launch files, configs, or code inside it
+## ROS2 Topics
 
-### Offline Operation
+| Topic | Type | Direction |
+|-------|------|-----------|
+| `/diff_drive/odometry` | nav_msgs/msg/Odometry | Gazebo → ROS2 |
+| `/diff_drive/cmd_vel` | geometry_msgs/msg/Twist | ROS2 → Gazebo |
+| `/diff_drive/scan` | sensor_msgs/msg/LaserScan | Gazebo → ROS2 |
+| `/joint_states` | sensor_msgs/msg/JointState | Gazebo → ROS2 |
+| `/tf` | tf2_msgs/msg/TFMessage | Gazebo → ROS2 |
+| `/clock` | rosgraph_msgs/msg/Clock | Gazebo → ROS2 |
 
-The dashboard is designed to work **without internet access**:
-- All JavaScript libraries (Leaflet.js, Socket.IO) are in `backend/static/`
-- Map tiles use a simple canvas background instead of OpenStreetMap
-- Total static assets: ~248KB
+Frames: `diff_drive/odom` (odometry), `diff_drive` (base), `diff_drive/lidar_link` (LIDAR).
 
-If adding new frontend dependencies, download them to `static/` and use Flask's `url_for('static', filename='...')`.
+## Web API
 
-### Flask-SocketIO Threading Mode
+- `GET /` — Dashboard page
+- `GET /vehicle_state` — Current pose, speed, risk_index
+- `GET /trajectory` — Up to 500 historical points
+- `GET /risk/heatmap` — Risk grid data
+- **Socket.IO** `vehicle_pose` event: `{x, y, heading (deg), risk (0-1)}`
 
-**Critical**: The backend uses **threading mode**, NOT eventlet:
-- Do NOT import or use `eventlet`
-- Do NOT use `async_mode='eventlet'`
-- Socket.IO emits from ROS2 callbacks use `socketio.emit(..., namespace='/')`
+## Configuration
 
-## ROS2 Topics Reference
-
-### Published by Gazebo (via ros_gz_bridge)
-
-- `/diff_drive/odometry` (nav_msgs/msg/Odometry) - AGV pose and velocity
-- `/diff_drive/scan` (sensor_msgs/msg/LaserScan) - LIDAR data
-- `/joint_states` (sensor_msgs/msg/JointState) - Joint positions
-- `/tf` (tf2_msgs/msg/TFMessage) - Transform tree
-- `/clock` (rosgraph_msgs/msg/Clock) - Simulation time
-
-### Subscribed by Gazebo
-
-- `/diff_drive/cmd_vel` (geometry_msgs/msg/Twist) - Velocity commands
-
-### Frames
-
-- `diff_drive/odom` - Odometry frame
-- `diff_drive` - Robot base frame
-- `diff_drive/lidar_link` - LIDAR sensor frame
-
-## REST API Endpoints
-
-- `GET /` - Serves dashboard.html
-- `GET /vehicle_state` - Current AGV state (pose, speed, risk_index)
-- `GET /trajectory` - Historical trajectory points (max 500)
-- `GET /risk/heatmap` - Simulated risk heatmap data
-
-## Socket.IO Events
-
-- **Client → Server**: `connect`, `disconnect`
-- **Server → Client**: `vehicle_pose` - Real-time AGV position updates
-  ```json
-  {
-    "x": float,
-    "y": float,
-    "heading": float,  // degrees [0, 360)
-    "risk": float      // [0.0, 1.0]
-  }
-  ```
-
-## Common Issues
-
-### "Connecting..." in Dashboard
-- Ensure Flask server is running with ROS2 environment sourced
-- Check browser console (F12) for Socket.IO connection errors
-- Verify port 5000 is not blocked: `ss -tuln | grep 5000`
-
-### No Real-Time Data Updates
-- Ensure Gazebo simulation is running
-- Verify ROS2 topic is publishing: `ros2 topic hz /diff_drive/odometry`
-- Check Flask terminal for "Emitting pose data" messages
-
-### Page Won't Load Without Proxy
-- All external CDN resources have been downloaded to `backend/static/`
-- If page still won't load, check that static files exist: `ls -lh backend/static/js/`
+- `web_dashboard/config.yaml` — Server port, ROS2 topic selection, map center, heatmap grid size
+- `backend/config/vehicle_source.yaml` — Vehicle type switch (agv_ackermann vs diff_drive)
+- `ros_gz_example_bringup/config/ros_gz_example_bridge.yaml` — Gazebo↔ROS2 topic mappings
 
 ## Environment
 
-- **OS**: Ubuntu 22.04
-- **ROS2**: Humble
-- **Gazebo**: Fortress
-- **Python**: 3.10+
-- **Required Python packages**: flask, flask-cors, flask-socketio, rclpy, nav_msgs
+- Ubuntu 22.04, ROS2 Humble, Gazebo Fortress, Python 3.10+
+- Python packages: flask, flask-cors, flask-socketio, rclpy, nav_msgs
