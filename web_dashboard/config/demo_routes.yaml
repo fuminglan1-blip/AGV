@@ -1,0 +1,53 @@
+# demo_routes.yaml — Predefined waypoint routes for experiment demos
+#
+# Each route is a list of [x, y] waypoints in Gazebo coordinates.
+# The mission controller drives to each waypoint in sequence.
+#
+# agv_ackermann spawns at (5, 3) in harbour_diff_drive.sdf.
+# Coordinates stay within the harbour scene (roughly -20..40, -15..20).
+#
+# Waypoint tracking parameters (used by agv_mission_controller):
+waypoint_tracking:
+  arrive_radius: 1.5       # meters — switch to next waypoint when within this
+  speed: 1.0               # m/s — cruise speed during mission
+  slow_radius: 3.0         # meters — start slowing when within this
+  slow_speed: 0.5          # m/s — speed when close to waypoint
+  heading_tolerance: 0.3   # rad (~17°) — acceptable heading error before driving
+
+demo_routes:
+  # Standard port operation: straight run along the quay
+  standard_operation:
+    description: "Straight run along the quay and back"
+    waypoints:
+      - [5.0, 3.0]
+      - [10.0, 3.0]
+      - [15.0, 3.0]
+      - [20.0, 3.0]
+      - [20.0, 6.0]
+      - [10.0, 6.0]
+      - [5.0, 3.0]
+
+  # Deformation test: weaving path to test steering response
+  deformation_test:
+    description: "Weaving path testing steering dynamics"
+    waypoints:
+      - [5.0, 3.0]
+      - [8.0, 6.0]
+      - [12.0, 1.0]
+      - [16.0, 6.0]
+      - [20.0, 3.0]
+      - [16.0, 3.0]
+      - [5.0, 3.0]
+
+  # Avoidance demo: route around obstacles
+  avoidance_demo:
+    description: "Route around harbour obstacles"
+    waypoints:
+      - [5.0, 3.0]
+      - [10.0, 0.0]
+      - [15.0, -2.0]
+      - [20.0, 0.0]
+      - [20.0, 5.0]
+      - [15.0, 7.0]
+      - [10.0, 5.0]
+      - [5.0, 3.0]

@@ -3,43 +3,31 @@
 agv_manual_controller.py — Persistent-state manual Ackermann controller
 =======================================================================
 
-Problem solved:
-    teleop_twist_keyboard sends a full Twist per keypress — pressing
-    'forward' emits {linear.x: V, angular.z: 0}, which resets steering
-    to zero.  Speed and steering are coupled in a single message rather
-    than being independent state variables.
+Maintains two persistent states:
+    target_speed       — changed only by w/s/SPACE/q or remote commands
+    target_steer_angle — changed only by a/d/r/q or remote commands
+A fixed-rate timer converts these to Twist via Ackermann geometry
+and publishes to /agv/cmd_vel.  Rate-limiting provides smooth
+acceleration and steering transitions.
 
-Solution:
-    This node maintains two persistent states:
-        target_speed       — changed only by w/s/SPACE/q
-        target_steer_angle — changed only by a/d/r/q
-    A fixed-rate timer converts these to Twist via Ackermann geometry
-    and publishes to /agv/cmd_vel.  Rate-limiting provides smooth
-    acceleration and steering transitions.
+Control inputs (two sources, same command set):
+    1. Local keyboard  (when run in a terminal)
+    2. /agv/control_cmd topic (std_msgs/String) — from Flask or mission controller
+
+Supported commands (keyboard key → command string):
+    w → speed_up       s → speed_down
+    a → steer_left     d → steer_right
+    SPACE → stop       r → center_steer
+    q → reset_all
+
+Mission-specific commands (from agv_mission_controller):
+    set_speed:<value>       — set target speed directly (m/s)
+    set_steer:<value>       — set target steer directly (rad)
 
 Ackermann conversion:
     angular.z = speed × tan(steer_angle) / wheel_base
 
-    When stopped (speed ≈ 0) with non-zero steering, a tiny 0.01 m/s
-    creep is sent so the plugin maintains the correct wheel angle.
-    (AckermannSteering computes steer = atan2(ω·L, |v|); when v=0
-    the angle jumps to ±max regardless of ω.)
-
-Usage:
-    source /opt/ros/humble/setup.bash
-    source install/setup.bash
-    python3 agv_manual_controller.py
-
-Keys:
-    w / s     increase / decrease target speed
-    a / d     steer left / right  (angle holds between presses)
-    SPACE     emergency stop  (speed → 0, steering preserved)
-    r         center steering (speed preserved)
-    q         full reset      (speed → 0, steering → 0)
-    ESC       quit            (sends stop command first)
-
-Configuration:
-    agv_manual_config.yaml  (same directory as this script)
+Configuration: agv_manual_config.yaml (same directory)
 """
 
 import math
@@ -53,6 +41,7 @@ import yaml
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from std_msgs.msg import String
 
 
 # ─── Config loader ────────────────────────────────────────────────
@@ -76,6 +65,19 @@ def get_key(settings, timeout=0.02):
     return key
 
 
+# ─── Command constants ────────────────────────────────────────────
+
+KEY_TO_CMD = {
+    'w': 'speed_up',
+    's': 'speed_down',
+    'a': 'steer_left',
+    'd': 'steer_right',
+    ' ': 'stop',
+    'r': 'center_steer',
+    'q': 'reset_all',
+}
+
+
 # ─── Controller node ─────────────────────────────────────────────
 
 class AGVManualController(Node):
@@ -83,65 +85,93 @@ class AGVManualController(Node):
     def __init__(self, cfg):
         super().__init__('agv_manual_controller')
 
-        # Vehicle geometry & limits (from config, matches model.sdf)
-        self.wheel_base    = cfg['wheel_base']
-        self.max_speed     = cfg['max_speed']
-        self.max_reverse   = cfg.get('max_reverse_speed', self.max_speed * 0.4)
-        self.max_steer     = cfg['max_steer_angle']
-        self.max_accel     = cfg['max_accel']
+        # Vehicle geometry & limits
+        self.wheel_base     = cfg['wheel_base']
+        self.max_speed      = cfg['max_speed']
+        self.max_reverse    = cfg.get('max_reverse_speed', self.max_speed * 0.4)
+        self.max_steer      = cfg['max_steer_angle']
+        self.max_accel      = cfg['max_accel']
         self.max_steer_rate = cfg['max_steer_rate']
-        self.speed_step    = cfg.get('speed_step', 0.2)
-        self.steer_step    = cfg.get('steer_step', 0.05)
-        self.publish_rate  = cfg.get('publish_rate', 20)
+        self.speed_step     = cfg.get('speed_step', 0.2)
+        self.steer_step     = cfg.get('steer_step', 0.05)
+        self.publish_rate   = cfg.get('publish_rate', 20)
 
         # ── Persistent control state ──
-        self.target_speed  = 0.0    # m/s, + = forward
-        self.target_steer  = 0.0    # rad, + = left
-        self.current_speed = 0.0    # rate-limited actual
-        self.current_steer = 0.0    # rate-limited actual
+        self.target_speed  = 0.0
+        self.target_steer  = 0.0
+        self.current_speed = 0.0
+        self.current_steer = 0.0
 
-        # Publisher
+        # Publisher: /agv/cmd_vel
         topic = cfg.get('cmd_vel_topic', '/agv/cmd_vel')
         self.pub = self.create_publisher(Twist, topic, 10)
+
+        # Subscriber: /agv/control_cmd — remote commands from Flask / mission
+        self.create_subscription(
+            String, '/agv/control_cmd', self._on_control_cmd, 10)
 
         # Fixed-rate publish timer
         self.dt = 1.0 / self.publish_rate
         self.timer = self.create_timer(self.dt, self._publish)
 
-        # Display helper
         self._display_lines = 0
-
         self.get_logger().info(
-            f'Ready — publishing {topic} @ {self.publish_rate} Hz')
+            f'Ready — {topic} @ {self.publish_rate} Hz, '
+            f'listening on /agv/control_cmd')
 
-    # ── Keyboard → state ──────────────────────────────────────────
+    # ── Remote command handler ────────────────────────────────────
 
-    def handle_key(self, key):
-        """Update target state from a single keypress."""
-        if key == 'w':
+    def _on_control_cmd(self, msg: String):
+        """Handle commands from /agv/control_cmd topic."""
+        self.execute_command(msg.data)
+
+    # ── Unified command execution ─────────────────────────────────
+
+    def execute_command(self, cmd: str):
+        """Execute a named command (from keyboard or remote)."""
+        if cmd == 'speed_up':
             self.target_speed = min(
                 self.target_speed + self.speed_step, self.max_speed)
-        elif key == 's':
+        elif cmd == 'speed_down':
             self.target_speed = max(
                 self.target_speed - self.speed_step, -self.max_reverse)
-        elif key == 'a':                       # steer left (+)
+        elif cmd == 'steer_left':
             self.target_steer = min(
                 self.target_steer + self.steer_step, self.max_steer)
-        elif key == 'd':                       # steer right (−)
+        elif cmd == 'steer_right':
             self.target_steer = max(
                 self.target_steer - self.steer_step, -self.max_steer)
-        elif key == ' ':                       # emergency stop
+        elif cmd == 'stop':
             self.target_speed = 0.0
-        elif key == 'r':                       # center steering
+        elif cmd == 'center_steer':
             self.target_steer = 0.0
-        elif key == 'q':                       # full reset
+        elif cmd == 'reset_all':
             self.target_speed = 0.0
             self.target_steer = 0.0
+        elif cmd.startswith('set_speed:'):
+            try:
+                v = float(cmd.split(':', 1)[1])
+                self.target_speed = max(-self.max_reverse,
+                                        min(v, self.max_speed))
+            except ValueError:
+                pass
+        elif cmd.startswith('set_steer:'):
+            try:
+                s = float(cmd.split(':', 1)[1])
+                self.target_steer = max(-self.max_steer,
+                                         min(s, self.max_steer))
+            except ValueError:
+                pass
+
+    def handle_key(self, key):
+        """Translate keypress to command and execute."""
+        cmd = KEY_TO_CMD.get(key)
+        if cmd:
+            self.execute_command(cmd)
 
     # ── Fixed-rate publish with rate limiting ─────────────────────
 
     def _publish(self):
-        # Smooth approach to targets
         self.current_speed = self._approach(
             self.current_speed, self.target_speed,
             self.max_accel * self.dt)
@@ -153,12 +183,7 @@ class AGVManualController(Node):
         delta = self.current_steer
 
         # Ackermann: omega = v * tan(delta) / L
-        #
-        # When stopped with non-zero steering, the AckermannSteering
-        # plugin cannot hold an arbitrary wheel angle (it computes
-        # steer = atan2(ω·L, |v|) — when v=0 the angle saturates).
-        # Workaround: send a tiny 0.01 m/s creep so the geometry
-        # resolves correctly.  The vehicle moves ~1 cm/s — negligible.
+        # Tiny creep when stopped with steering set (see module docstring)
         if abs(v) < 0.01 and abs(delta) > 0.001:
             v_eff = 0.01
         else:
@@ -175,18 +200,20 @@ class AGVManualController(Node):
 
     @staticmethod
     def _approach(current, target, max_step):
-        """Move current toward target by at most max_step."""
         diff = target - current
         if abs(diff) <= max_step:
             return target
         return current + math.copysign(max_step, diff)
 
-    # ── Send zero and clear state ─────────────────────────────────
+    # ── Emergency stop ────────────────────────────────────────────
 
     def stop(self):
         self.target_speed = self.target_steer = 0.0
         self.current_speed = self.current_steer = 0.0
-        self.pub.publish(Twist())
+        try:
+            self.pub.publish(Twist())
+        except Exception:
+            pass
 
     # ── Terminal status display ───────────────────────────────────
 
@@ -196,7 +223,6 @@ class AGVManualController(Node):
         ta_deg = math.degrees(self.target_steer)
         ca_deg = math.degrees(self.current_steer)
 
-        # Visual steering bar: left ←──│──→ right
         bar_w = 21
         mid = bar_w // 2
         pos = mid - int(round(
@@ -216,6 +242,7 @@ class AGVManualController(Node):
             f'  ─────────────────────────────────────────────',
             f'  w/s: speed ↑↓   a/d: steer ←→',
             f'  SPACE: stop   r: center steer   q: reset   ESC: quit',
+            f'  (also accepts remote commands on /agv/control_cmd)',
         ]
 
         if self._display_lines > 0:
@@ -234,9 +261,17 @@ def main():
     ctrl = AGVManualController(cfg)
 
     if not sys.stdin.isatty():
-        print('Error: stdin is not a terminal. Run this in an interactive shell.')
-        ctrl.destroy_node()
-        rclpy.shutdown()
+        # Headless mode: only accept remote commands via /agv/control_cmd
+        print('[agv_manual_controller] Running headless (no keyboard).')
+        print('  Send commands via: ros2 topic pub /agv/control_cmd std_msgs/String "data: speed_up"')
+        try:
+            rclpy.spin(ctrl)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            ctrl.stop()
+            ctrl.destroy_node()
+            rclpy.shutdown()
         return
 
     settings = termios.tcgetattr(sys.stdin)
@@ -245,13 +280,14 @@ def main():
     print('╔══════════════════════════════════════════════╗')
     print('║   AGV Manual Controller  (Ackermann)         ║')
     print('║   Steering HOLDS between keypresses          ║')
+    print('║   Also accepts /agv/control_cmd (remote)     ║')
     print('╚══════════════════════════════════════════════╝')
 
     try:
         while rclpy.ok():
             key = get_key(settings, timeout=0.02)
 
-            if key in ('\x1b', '\x03'):        # ESC or Ctrl-C
+            if key in ('\x1b', '\x03'):
                 break
             if key:
                 ctrl.handle_key(key)

@@ -35,7 +35,7 @@ for _mod in ('eventlet', 'eventlet.wsgi', 'eventlet.green', 'eventlet.green.thre
         sys.modules[_mod] = None          # type: ignore[assignment]
 
 import yaml
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
@@ -46,9 +46,11 @@ for _mod in _blocked:
 del _blocked
 
 # ROS2
+import json
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 
 # Development-period risk pipeline (local modules)
 import risk_layer
@@ -89,6 +91,28 @@ vehicle_state: dict = {
 
 trajectory_history: deque = deque(maxlen=500)
 state_lock = threading.Lock()
+
+# Mission / control state (updated from /agv/mission_status subscription)
+mission_state: dict = {
+    'mode': 'idle',
+    'route_name': '',
+    'running': False,
+    'waypoint_index': 0,
+    'total_waypoints': 0,
+    'progress': '',
+}
+
+# Load demo route names for the frontend
+_routes_cfg_path = os.path.join(os.path.dirname(__file__), 'config', 'demo_routes.yaml')
+try:
+    with open(_routes_cfg_path, 'r') as _rf:
+        _routes_cfg = yaml.safe_load(_rf)
+    DEMO_ROUTES = {
+        name: info.get('description', name) if isinstance(info, dict) else name
+        for name, info in _routes_cfg.get('demo_routes', {}).items()
+    }
+except Exception:
+    DEMO_ROUTES = {}
 
 # Load configuration from config.yaml
 _cfg_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
@@ -134,6 +158,17 @@ class AGVPoseSubscriber(Node):
         super().__init__('agv_pose_subscriber')
         self.subscription = self.create_subscription(
             Odometry, ROS2_TOPIC, self.odometry_callback, 10)
+
+        # Publishers for vehicle control (high-level commands, not raw Twist)
+        self.control_cmd_pub = self.create_publisher(
+            String, '/agv/control_cmd', 10)
+        self.mission_cmd_pub = self.create_publisher(
+            String, '/agv/mission_cmd', 10)
+
+        # Subscribe to mission status from agv_mission_controller
+        self.create_subscription(
+            String, '/agv/mission_status', self._on_mission_status, 10)
+
         self.get_logger().info(f'Subscribed to {ROS2_TOPIC}')
 
     def odometry_callback(self, msg: Odometry) -> None:
@@ -180,6 +215,16 @@ class AGVPoseSubscriber(Node):
         }, namespace='/')
 
 
+    def _on_mission_status(self, msg: String):
+        """Update shared mission_state from mission controller."""
+        try:
+            data = json.loads(msg.data)
+            with state_lock:
+                mission_state.update(data)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+
 def _ros2_spin(node: Node) -> None:
     """Run ROS2 executor in background thread (non-blocking for Flask)."""
     try:
@@ -190,11 +235,16 @@ def _ros2_spin(node: Node) -> None:
         node.destroy_node()
 
 
+_ros2_node: AGVPoseSubscriber | None = None
+
+
 def initialize_ros2():
     """Init ROS2 node; return node or None on failure."""
+    global _ros2_node
     try:
         rclpy.init()
         node = AGVPoseSubscriber()
+        _ros2_node = node
         t = threading.Thread(target=_ros2_spin, args=(node,), daemon=True)
         t.start()
         print('✓ ROS2 node initialised – subscribed to', ROS2_TOPIC)
@@ -323,6 +373,106 @@ def refresh_heatmap():
     _heatmap_cache = None
     data = _get_heatmap()
     return jsonify({'status': 'refreshed', 'points': len(data)})
+
+
+# ---------------------------------------------------------------------------
+# Control & Mission endpoints
+# ---------------------------------------------------------------------------
+
+VALID_MANUAL_ACTIONS = {
+    'speed_up', 'speed_down', 'steer_left', 'steer_right',
+    'center_steer', 'stop', 'reset_all',
+}
+
+
+@app.route('/control/manual', methods=['POST'])
+def control_manual():
+    """Send a manual control command to agv_manual_controller."""
+    if not _ros2_node:
+        return jsonify({'error': 'ROS2 not available'}), 503
+
+    data = request.get_json(silent=True) or {}
+    action = data.get('action', '')
+
+    if action not in VALID_MANUAL_ACTIONS:
+        return jsonify({'error': f'Unknown action: {action}'}), 400
+
+    msg = String()
+    msg.data = action
+    _ros2_node.control_cmd_pub.publish(msg)
+
+    # Update mode to manual (unless a mission is running)
+    with state_lock:
+        if not mission_state.get('running'):
+            mission_state['mode'] = 'manual'
+
+    return jsonify({'status': 'ok', 'action': action})
+
+
+@app.route('/control/stop', methods=['POST'])
+def control_stop():
+    """Emergency stop — cancels mission and stops vehicle."""
+    if _ros2_node:
+        # Cancel any running mission
+        cmd = String()
+        cmd.data = 'cancel'
+        _ros2_node.mission_cmd_pub.publish(cmd)
+        # Stop the vehicle
+        stop = String()
+        stop.data = 'reset_all'
+        _ros2_node.control_cmd_pub.publish(stop)
+
+    with state_lock:
+        mission_state['mode'] = 'idle'
+        mission_state['running'] = False
+
+    return jsonify({'status': 'stopped'})
+
+
+@app.route('/mission/start', methods=['POST'])
+def mission_start():
+    """Start a predefined demo route."""
+    if not _ros2_node:
+        return jsonify({'error': 'ROS2 not available'}), 503
+
+    data = request.get_json(silent=True) or {}
+    route_name = data.get('route_name', '')
+
+    if route_name not in DEMO_ROUTES:
+        return jsonify({
+            'error': f'Unknown route: {route_name}',
+            'available': list(DEMO_ROUTES.keys()),
+        }), 400
+
+    msg = String()
+    msg.data = f'start:{route_name}'
+    _ros2_node.mission_cmd_pub.publish(msg)
+
+    return jsonify({'status': 'started', 'route_name': route_name})
+
+
+@app.route('/mission/cancel', methods=['POST'])
+def mission_cancel():
+    """Cancel the running mission."""
+    if _ros2_node:
+        msg = String()
+        msg.data = 'cancel'
+        _ros2_node.mission_cmd_pub.publish(msg)
+
+    return jsonify({'status': 'cancelled'})
+
+
+@app.route('/mission/status')
+def mission_status():
+    """Current mission/control mode status."""
+    with state_lock:
+        return jsonify(dict(mission_state))
+
+
+@app.route('/mission/routes')
+def mission_routes():
+    """List available demo routes."""
+    return jsonify(DEMO_ROUTES)
 
 
 # ---------------------------------------------------------------------------

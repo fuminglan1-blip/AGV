@@ -12,7 +12,9 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''Heatmap points: {len\\(d\\)}, first: {d[0]}''''\\)\")",
       "Bash(timeout 5 python3 app.py)",
       "Bash(ros2 interface:*)",
-      "Bash(chmod +x /home/loong/AGV_sim/src/agv_manual_controller.py)"
+      "Bash(chmod +x /home/loong/AGV_sim/src/agv_manual_controller.py)",
+      "Bash(python3 -m py_compile agv_manual_controller.py)",
+      "Bash(python3 -m py_compile web_dashboard/agv_mission_controller.py)"
     ]
   }
 }
