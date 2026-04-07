@@ -23,14 +23,21 @@ vehicle:
 
 # Map Configuration
 map:
+  # Tile provider: 'simple' (default) | 'osm' | 'carto'
+  # simple = CRS.Simple 仿真平面坐标 (无需网络/key)
+  # osm    = OpenStreetMap 瓦片 (需联网)
+  # carto  = CartoDB 暗色瓦片 (需联网)
+  # 可在浏览器 URL 添加 ?provider=osm 临时切换
+  provider: simple
+
+  # 地理坐标锚点 (osm/carto 模式使用, 仿真原点映射到此处)
   center_lat: 1.2821
   center_lng: 103.858
   default_zoom: 16
 
   # Coordinate conversion (adjust based on your simulation scale)
-  # These values convert simulation coordinates (meters) to lat/lng offsets
-  lat_offset: 0.0001  # meters to latitude conversion factor
-  lng_offset: 0.0001  # meters to longitude conversion factor
+  lat_offset: 0.0001
+  lng_offset: 0.0001
 
 # Risk Heatmap
 heatmap:

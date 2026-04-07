@@ -27,16 +27,36 @@ Output:
 """
 
 import math
+import os
+import yaml
 
 # ---------------------------------------------------------------------------
-# Tunable thresholds
+# Tunable thresholds — can be overridden via config.yaml risk_thresholds section
 # ---------------------------------------------------------------------------
-T_TERRAIN_DANGER = 0.70    # terrain risk → danger
-T_TERRAIN_WARN   = 0.40    # terrain risk → warn
-T_SPEED_DANGER   = 0.35    # m/s: speed threshold for compound risk rule
-T_SPEED_TERRAIN  = 0.50    # terrain value above which speed matters
-T_GRAD_WARN      = 0.05    # gradient magnitude → warn
-T_GRAD_TERRAIN   = 0.35    # terrain value above which gradient matters
+_DEFAULT_THRESHOLDS = {
+    'terrain_danger': 0.70,
+    'terrain_warn':   0.40,
+    'speed_danger':   0.35,
+    'speed_terrain':  0.50,
+    'grad_warn':      0.05,
+    'grad_terrain':   0.35,
+}
+
+# Try loading from config.yaml
+_cfg_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
+try:
+    with open(_cfg_path, 'r') as _f:
+        _cfg = yaml.safe_load(_f) or {}
+    _thresh_cfg = _cfg.get('risk_thresholds', {})
+except Exception:
+    _thresh_cfg = {}
+
+T_TERRAIN_DANGER = _thresh_cfg.get('terrain_danger', _DEFAULT_THRESHOLDS['terrain_danger'])
+T_TERRAIN_WARN   = _thresh_cfg.get('terrain_warn',   _DEFAULT_THRESHOLDS['terrain_warn'])
+T_SPEED_DANGER   = _thresh_cfg.get('speed_danger',   _DEFAULT_THRESHOLDS['speed_danger'])
+T_SPEED_TERRAIN  = _thresh_cfg.get('speed_terrain',  _DEFAULT_THRESHOLDS['speed_terrain'])
+T_GRAD_WARN      = _thresh_cfg.get('grad_warn',      _DEFAULT_THRESHOLDS['grad_warn'])
+T_GRAD_TERRAIN   = _thresh_cfg.get('grad_terrain',   _DEFAULT_THRESHOLDS['grad_terrain'])
 
 
 def fuse(vehicle_state: dict, terrain_query: dict) -> dict:

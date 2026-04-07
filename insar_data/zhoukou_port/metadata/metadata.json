@@ -1,0 +1,51 @@
+{
+  "site": "zhoukou_port",
+  "site_cn": "周口港",
+  "description": "周口港 InSAR 地面形变监测 (合成演示数据)",
+  "crs": "EPSG:4326",
+  "bounds": {
+    "west": 114.646,
+    "south": 33.627,
+    "east": 114.65400000000001,
+    "north": 33.635
+  },
+  "center": {
+    "lat": 33.631,
+    "lng": 114.65
+  },
+  "resolution_m": 4.45,
+  "grid_size": 200,
+  "unit": "mm/yr",
+  "data_source": "mock_synthetic",
+  "is_mock": true,
+  "note": "合成数据，仅用于系统链路验证。后续替换为 MintPy 真实处理结果。",
+  "timestamp": "2024-01-01T00:00:00Z",
+  "layers": {
+    "velocity": "processed/velocity.tif",
+    "gradient": "processed/gradient.tif",
+    "risk_zones": "processed/risk_zones.geojson",
+    "aoi": "metadata/aoi.geojson"
+  },
+  "thresholds": {
+    "low_max_mm_yr": 5.0,
+    "medium_max_mm_yr": 15.0
+  },
+  "hotspots": [
+    {
+      "description": "码头装卸区沉降",
+      "peak_mm_yr": -25.0
+    },
+    {
+      "description": "集装箱堆场沉降",
+      "peak_mm_yr": -18.0
+    },
+    {
+      "description": "仓储区沉降",
+      "peak_mm_yr": -12.0
+    },
+    {
+      "description": "港区边缘轻微沉降",
+      "peak_mm_yr": -8.0
+    }
+  ]
+}

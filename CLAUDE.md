@@ -4,124 +4,137 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Port AGV Digital Twin** — ROS2 Humble + Gazebo Fortress simulation with a Flask web dashboard for real-time visualization. Currently in **Phase 1: Minimal Viable Integration**.
+**Port AGV Digital Twin** — ROS2 Humble + Gazebo Fortress + Flask web dashboard for real-time harbour AGV simulation and visualization. Currently in **Phase 1: Minimal Viable Integration**.
 
-**Primary vehicle: `agv_ackermann`** (Ackermann-steered port truck). diff_drive has been removed from the run chain and archived.
-
-Three main components:
-1. **ROS2 + Gazebo Simulation** (`ros_gz_project_template/`) — agv_ackermann in a port harbour scene.
-2. **Harbour Assets** (`harbour_assets_description/`) — Custom ROS2 package providing port 3D models (crane, containers) to Gazebo via `GZ_SIM_RESOURCE_PATH`.
-3. **Web Dashboard** (`web_dashboard/`) — Flask + Socket.IO + ROS2 node hybrid with control panel and mission routes.
+Primary vehicle: `agv_ackermann` (Ackermann-steered port truck, 3m wheelbase, 10t). diff_drive is archived.
 
 ## Architecture
 
 ```
-Gazebo (harbour_diff_drive.sdf world — agv_ackermann only)
-    ↓ ros_gz_bridge (config: ros_gz_agv_ackermann_bridge.yaml)
-ROS2 Topics: /agv/odometry, /agv/cmd_vel, /agv/joint_states
+Gazebo Fortress (harbour_diff_drive.sdf)
+    ↓ ros_gz_bridge (ros_gz_agv_ackermann_bridge.yaml)
+/agv/odometry, /agv/cmd_vel, /agv/joint_states, /agv/scan
     ↓
-agv_manual_controller.py (sole /agv/cmd_vel publisher)
-    ↑ /agv/control_cmd from Flask or agv_mission_controller
+agv_manual_controller.py        ← sole /agv/cmd_vel publisher
+    ↑ /agv/control_cmd (String commands from Flask or mission controller)
+    ↑ set_speed:<val>, set_steer:<val> (from agv_mission_controller)
     ↓
-web_dashboard/app.py (Flask-SocketIO, threading mode)
-    ├── risk_layer.py    → static 200x200 risk grid
-    └── risk_fusion.py   → risk_score + risk_state
-    ↓ Socket.IO emit (vehicle_pose event)
-Browser Dashboard (templates/dashboard.html)
+web_dashboard/app.py (Flask-SocketIO + ROS2 node hybrid)
+    ├── risk_layer.py    → 200×200 synthetic risk grid (-100..+100m)
+    ├── risk_fusion.py   → rule-based: terrain×0.7 + gradient×0.3 → score/state
+    ├── alert_history    → deque(maxlen=100), risk transitions trigger alerts
+    ├── Socket.IO emit   → agv_state, risk_state, alert_event, system_status
+    └── REST API         → /api/* unified + legacy /vehicle_state etc.
+    ↓
+Browser (templates/dashboard.html — Leaflet + Socket.IO, fully offline)
 ```
 
-**Threading model**: Main thread runs Flask-SocketIO (threading mode, NOT eventlet). Background thread runs `rclpy.spin()`. Shared state protected by `state_lock`.
+**Threading model**: Main thread = Flask-SocketIO (threading mode, **NOT eventlet**). Background thread = `rclpy.spin()`. Third thread = system_status broadcaster (3s interval). All shared state protected by `state_lock` (threading.Lock). The eventlet import is explicitly blocked at the top of app.py to prevent engineio auto-detection.
 
-## Development Commands
+**Control chain**: Browser → POST /control/manual → app.py publishes String to /agv/control_cmd → agv_manual_controller receives, updates persistent target_speed/target_steer → timer at 20Hz applies rate-limiting → publishes Twist to /agv/cmd_vel → Gazebo AckermannSteering plugin.
 
-### Build (from workspace root `AGV_sim/src/`)
+**Mission chain**: Browser → POST /mission/start → app.py publishes "start:route_name" to /agv/mission_cmd → agv_mission_controller loads waypoints, runs 10Hz control loop publishing set_speed/set_steer to /agv/control_cmd → status published as JSON on /agv/mission_status → app.py receives and emits to browser.
+
+## Build and Launch
 
 ```bash
+# Build (from AGV_sim/src/)
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
 source install/setup.bash
-```
 
-### Launch Simulation
+# One-click launch (recommended for demo — opens 3 gnome-terminal windows)
+cd scripts && ./start_all.sh
 
-```bash
+# Or tmux version (headless)
+cd scripts && ./start_all_tmux.sh
+
+# Or manual step-by-step:
+# Terminal 1: Gazebo
 ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py rviz:=false
-```
-
-### Run Control + Web Dashboard
-
-```bash
-# Terminal 2: manual controller
+# Terminal 2: Controller (interactive keyboard)
 python3 agv_manual_controller.py
+# Terminal 3: Mission + Flask
+cd web_dashboard && python3 agv_mission_controller.py & python3 app.py
 
-# Terminal 3: mission controller + Flask
-cd web_dashboard
-python3 agv_mission_controller.py &
-./start_server.sh
+# Web-only mode (no Gazebo, for frontend dev)
+cd scripts && ./dev_start.sh web
 ```
 
-### Control AGV
+Dashboard: http://localhost:5000 — switch map provider with `?provider=osm` or `?provider=carto`.
+
+## Verify
 
 ```bash
-# From browser: http://localhost:5000 (W/S/A/D + demo routes)
-# From CLI:
-ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 1.0}, angular: {z: 0.3}}"
-```
+# Health check script (tests all endpoints)
+./scripts/check.sh
 
-### Verify / Debug
-
-```bash
+# Manual checks
 ros2 topic list | grep agv
 ros2 topic hz /agv/odometry
-ros2 topic echo /agv/odometry --once
-
-curl http://localhost:5000/vehicle_state
-curl http://localhost:5000/mission/status
-curl http://localhost:5000/risk/heatmap
+curl http://localhost:5000/health
+curl http://localhost:5000/api/system/status
+curl http://localhost:5000/api/agv/latest
+curl http://localhost:5000/api/risk/current
 ```
-
-## Important Constraints
-
-- **Offline operation required.** All JS/CSS in `web_dashboard/static/`. No CDN.
-- **Threading mode only.** Do NOT use eventlet.
-- **Phase 1 scope only.** No InSAR, GNSS, dynamic terrain, multi-vehicle.
-- See `AGENTS.md` for the full constraint list.
 
 ## ROS2 Topics
 
 | Topic | Type | Direction |
 |-------|------|-----------|
-| `/agv/odometry` | nav_msgs/msg/Odometry | Gazebo → ROS2 |
-| `/agv/cmd_vel` | geometry_msgs/msg/Twist | ROS2 → Gazebo |
-| `/agv/joint_states` | sensor_msgs/msg/JointState | Gazebo → ROS2 |
-| `/agv/control_cmd` | std_msgs/msg/String | Flask/mission → controller |
-| `/agv/mission_cmd` | std_msgs/msg/String | Flask → mission controller |
-| `/agv/mission_status` | std_msgs/msg/String | mission controller → Flask |
-| `/tf` | tf2_msgs/msg/TFMessage | Gazebo → ROS2 |
-
-Frames: `agv_ackermann/*` (from Gazebo PosePublisher), `chassis` (URDF base).
+| `/agv/cmd_vel` | geometry_msgs/Twist | controller → Gazebo |
+| `/agv/odometry` | nav_msgs/Odometry | Gazebo → app.py, mission_controller |
+| `/agv/control_cmd` | std_msgs/String | app.py, mission_controller → manual_controller |
+| `/agv/mission_cmd` | std_msgs/String | app.py → mission_controller |
+| `/agv/mission_status` | std_msgs/String (JSON) | mission_controller → app.py |
+| `/agv/joint_states` | sensor_msgs/JointState | Gazebo → ROS2 |
+| `/agv/scan` | sensor_msgs/LaserScan | Gazebo → ROS2 |
+| `/tf` | tf2_msgs/TFMessage | Gazebo + robot_state_publisher |
 
 ## Web API
 
-- `GET /` — Dashboard page
-- `GET /vehicle_state` — Current pose, speed, risk
-- `GET /trajectory` — Up to 500 historical points
-- `GET /risk/heatmap` — Risk grid data
-- `POST /control/manual` — `{"action":"speed_up"}` etc.
-- `POST /control/stop` — Emergency stop
-- `POST /mission/start` — `{"route_name":"standard_operation"}`
-- `GET /mission/status` — Mode, route, progress
+Legacy endpoints preserved for backward compatibility. Unified `/api/*` endpoints added:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/system/status` | GET | Backend/ROS2/WebSocket status, uptime |
+| `/api/agv/latest` | GET | Position, orientation, speed, mode |
+| `/api/agv/path` | GET | Trajectory history (max 500 pts) |
+| `/api/risk/current` | GET | Risk level/score/reasons |
+| `/api/risk/heatmap` | GET | Full risk grid |
+| `/api/alerts/recent` | GET | Alert history (newest first) |
+| `/api/mission/status` | GET | Mission mode/route/progress |
+| `/api/demo/reset` | POST | Clear trajectory + alerts + cancel mission |
+| `/vehicle_state` | GET | Legacy: pose + speed + risk |
+| `/control/manual` | POST | `{"action":"speed_up"}` — 7 actions |
+| `/control/stop` | POST | Emergency stop + cancel mission |
+| `/mission/start` | POST | `{"route_name":"standard_operation"}` |
+| `/mission/cancel` | POST | Cancel running mission |
+| `/mission/routes` | GET | Available demo routes |
+
+WebSocket events (server → client): `agv_state` (~50Hz), `risk_state` (~50Hz), `alert_event` (on risk transition), `system_status` (3s), `mission_status` (on change), `vehicle_pose` (legacy compat).
 
 ## Configuration
 
-- `web_dashboard/config.yaml` — Server port, ROS2 topic, map settings
-- `web_dashboard/config/demo_routes.yaml` — Predefined waypoint routes
-- `agv_manual_config.yaml` — Controller limits (wheel_base, max_speed, etc.)
-- `ros_gz_example_bringup/config/ros_gz_agv_ackermann_bridge.yaml` — Gazebo↔ROS2 bridge
+| File | Purpose |
+|------|---------|
+| `web_dashboard/config.yaml` | Flask port, ROS2 topic, map provider (simple/osm/carto), risk thresholds |
+| `web_dashboard/config/demo_routes.yaml` | 3 demo routes with waypoint tracking params |
+| `agv_manual_config.yaml` | Vehicle geometry (wheel_base: 3.0m), limits, control rates |
+| `ros_gz_example_bringup/config/ros_gz_agv_ackermann_bridge.yaml` | Gazebo↔ROS2 topic bridge |
+
+## Important Constraints
+
+- **Offline operation required.** All JS/CSS in `web_dashboard/static/`. No CDN.
+- **Threading mode only.** Do NOT use eventlet — app.py blocks its import explicitly.
+- **Phase 1 scope only.** No InSAR, GNSS, dynamic terrain, multi-vehicle, Nav2/SLAM.
+- **agv_manual_controller.py is the sole /agv/cmd_vel publisher.** Never publish cmd_vel from elsewhere.
+- **Do not modify ros_gz_project_template/** — treat as read-only base.
+- **Do not break the existing demo chain:** Gazebo → controller → Flask → browser.
+- **Chinese UI.** Dashboard text is all Chinese for thesis defense presentation.
+- See `AGENTS.md` for the full constraint and code style list.
 
 ## Environment
 
 - Ubuntu 22.04, ROS2 Humble, Gazebo Fortress, Python 3.10+
-- Python packages: flask, flask-cors, flask-socketio, pyyaml, rclpy, nav_msgs
+- Python packages: flask, flask-cors, flask-socketio, pyyaml, rclpy, nav_msgs, numpy

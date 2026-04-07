@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "\u5468\u53e3\u6e2f\u5b9e\u9a8c\u533a",
+        "description": "Zhoukou Port InSAR study area (mock)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              114.646,
+              33.627
+            ],
+            [
+              114.65400000000001,
+              33.627
+            ],
+            [
+              114.65400000000001,
+              33.635
+            ],
+            [
+              114.646,
+              33.635
+            ],
+            [
+              114.646,
+              33.627
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
