@@ -174,7 +174,7 @@
         <div class="sim-blk">
             <div class="sim-lbl">仿真环境</div>
             <div class="sim-val" style="color:var(--cyan)">Gazebo Fortress</div>
-            <div class="sim-sub">harbour_diff_drive.sdf · agv_ackermann · ros_gz_bridge</div>
+            <div class="sim-sub">{{ scene_context.profile }} · {{ scene_context.title_cn }} · agv_ackermann · ros_gz_bridge</div>
         </div>
         <div class="sim-blk" style="max-width:140px">
             <div class="sim-lbl">里程计</div>
@@ -194,7 +194,7 @@
 
     <!-- Map — hero -->
     <div id="map">
-        <div class="map-badge">AGV 轨迹 · 风险热力图 · 港口仿真平面</div>
+        <div class="map-badge">{{ scene_context.title_cn }} · 400m 主场景 · 风险兼容层</div>
         <div class="map-prov" id="mapProviderBadge" title="点击切换底图模式">底图: 仿真平面</div>
     </div>
 </div>
@@ -244,7 +244,7 @@
                 <button class="btn" data-action="speed_down" title="S">▼ 后退</button>
                 <div></div>
             </div>
-            <button class="btn btn-stop" data-action="stop" title="空格" style="margin-bottom:4px;font-size:13px">紧急停车</button>
+            <button class="btn btn-stop" id="btnEmergencyStop" title="Esc" style="margin-bottom:4px;font-size:13px">紧急停车</button>
             <button class="btn" data-action="reset_all" title="Q" style="width:100%;font-size:13px">重置控制</button>
             <div style="color:var(--dim);font-size:11px;margin-top:6px;text-align:center">W/S/A/D 移动 · 空格停车 · R 归正 · Q 重置 · Esc 急停</div>
         </div>
@@ -315,6 +315,10 @@
             <label class="lrow"><input type="checkbox" id="toggleInsarHeatmap"> InSAR 形变图层</label>
             <label class="lrow"><input type="checkbox" id="toggleInsarZones"> InSAR 风险分区</label>
             <label class="lrow"><input type="checkbox" id="toggleGrid"> 坐标网格</label>
+            <div style="margin-top:6px;padding:6px 8px;border-radius:4px;font-size:11px;color:var(--text2);background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.15)">
+                当前主场景: <span style="color:var(--cyan)">{{ scene_context.profile }}</span><br>
+                风险热力图已对齐 400m 边界；仍属于 synthetic 兼容层，Zone A/B/C 依据 deformation 参数标注。
+            </div>
             <div style="display:flex;gap:4px;margin-top:6px">
                 <button class="btn" id="btnClearTrajectory" style="flex:1;font-size:12px">清除轨迹</button>
                 <button class="btn" id="btnResetDemo" style="flex:1;font-size:12px">重置演示</button>
@@ -331,7 +335,7 @@
 
 <!-- Footer -->
 <div class="ft">
-    <div><span style="cursor:pointer" id="btnToggleLog">系统日志</span> · agv_ackermann · 启动: <code style="font-size:.9em">scripts/start_all.sh</code></div>
+    <div><span style="cursor:pointer" id="btnToggleLog">系统日志</span> · agv_ackermann · 主场景: <code style="font-size:.9em">{{ scene_context.profile }}</code> · 启动: <code style="font-size:.9em">scripts/start_all.sh</code></div>
     <div><span id="bottomTime">--</span> · 港口 AGV 数字孪生 v1.0</div>
 </div>
 
@@ -341,13 +345,15 @@
 // ═══════════════════════════════════════════════════════════════
 // 配置
 // ═══════════════════════════════════════════════════════════════
+const SCENE_CONTEXT = {{ scene_context | tojson }};
 const CONFIG = {
     mapCenter: [0, 0],
-    mapZoom: 2,
+    mapZoom: 1,
     maxTrajectoryPoints: 500,
     pollInterval: 3000,
     maxAlerts: 30,
     maxLogLines: 200,
+    worldBounds: SCENE_CONTEXT.local_map_bounds,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -359,7 +365,7 @@ const CONFIG = {
 // URL 参数: ?provider=osm  或 ?provider=carto
 
 const MAP_PROVIDERS = {
-    simple: { label: '仿真平面', crs: L.CRS.Simple, center: [0,0], zoom: 2, minZoom: -2, maxZoom: 6, tile: null },
+    simple: { label: '仿真平面', crs: L.CRS.Simple, center: [0,0], zoom: 1, minZoom: -3, maxZoom: 6, tile: null },
     osm:    { label: 'OpenStreetMap (参考)', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
               tile: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; OpenStreetMap' },
     carto:  { label: 'CartoDB 暗色 (参考)', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
@@ -385,7 +391,7 @@ function xyToLatLng(x, y) { return simToLatLng(x, y); }
 // 状态
 // ═══════════════════════════════════════════════════════════════
 let socket=null, wsConnected=false, agvMarker=null, trajectoryPolyline=null,
-    heatmapLayer=null, gridLayer=null, trajectoryPoints=[], alertItems=[], logLines=[], tileLayer=null;
+    heatmapLayer=null, gridLayer=null, sceneOverlayLayer=null, trajectoryPoints=[], alertItems=[], logLines=[], tileLayer=null;
 
 // ═══════════════════════════════════════════════════════════════
 // 地图初始化
@@ -413,34 +419,101 @@ if (prov.tile) {
 }
 
 function _drawSimpleBackground() {
-    // Dark sea/background
-    L.rectangle([[-200,-200],[200,200]], { color:'#0c1829', fillColor:'#0c1829', fillOpacity:1, weight:0 }).addTo(map);
-    // Water area (south)
-    L.polygon([[-200,-200],[200,-200],[200,-60],[-200,-60]], { color:'#0a1628', fillColor:'#0a1628', fillOpacity:1, weight:0 }).addTo(map);
-    // Quay line
-    L.polyline([[-100,-8],[100,-8]], { color:'#2a3f5f', weight:2, dashArray:'8,4' }).addTo(map);
-    // Harbour outline
-    L.polygon([[-40,-8],[40,-8],[40,25],[-40,25]], { color:'#1e3a5f', fillColor:'#111d30', fillOpacity:.4, weight:1 }).addTo(map);
-    L.polygon([[40,-8],[80,-8],[80,15],[40,15]], { color:'#1e3a5f', fillColor:'#111d30', fillOpacity:.3, weight:1 }).addTo(map);
-    // Labels
-    L.marker([27, 0], { icon: L.divIcon({ className:'', html:'<span style="color:#2a4a6a;font-size:11px;white-space:nowrap">港口作业区</span>', iconAnchor:[30,0] }) }).addTo(map);
-    L.marker([-30, 0], { icon: L.divIcon({ className:'', html:'<span style="color:#1a3050;font-size:10px;white-space:nowrap">水域</span>', iconAnchor:[12,0] }) }).addTo(map);
-    L.marker([-9, -40], { icon: L.divIcon({ className:'', html:'<span style="color:#2a4a6a;font-size:9px;white-space:nowrap">码头岸线</span>', iconAnchor:[20,0] }) }).addTo(map);
-    // Coordinate grid (10m spacing, visible but subtle)
-    const gridLines = [];
-    for (let v=-100; v<=100; v+=20) {
-        gridLines.push([[-200,v],[200,v]]);
-        gridLines.push([[v,-200],[v,200]]);
+    if(sceneOverlayLayer) map.removeLayer(sceneOverlayLayer);
+    sceneOverlayLayer = L.layerGroup();
+    const b = CONFIG.worldBounds;
+    const southWest = [b.min_y, b.min_x];
+    const northEast = [b.max_y, b.max_x];
+
+    L.rectangle([southWest, northEast], {
+        color:'#0c1829', fillColor:'#0c1829', fillOpacity:1, weight:1, opacity:.8
+    }).addTo(sceneOverlayLayer);
+
+    const corridorStyle = { color:'#1d4ed8', fillColor:'#10233f', fillOpacity:.35, weight:1, opacity:.8 };
+    const markerStyle = (color, fill) => ({ color, fillColor:fill, fillOpacity:.3, weight:1, opacity:.9 });
+    const rectFromCenter = (center, size) => {
+        const [cx, cy] = center;
+        const [sx, sy] = size;
+        return [[cy - sy / 2, cx - sx / 2], [cy + sy / 2, cx + sx / 2]];
+    };
+
+    const corridors = SCENE_CONTEXT.corridors || {};
+    const mainCorridor = corridors.main_test_corridor || {};
+    const secondaryCorridor = corridors.secondary_test_corridor || {};
+    const connectorLane = corridors.connector_lane || {};
+    const mainCenterline = mainCorridor.centerline_xy || [[-120, 10], [120, 10]];
+    const secondaryCenterline = secondaryCorridor.centerline_xy || [[-120, -40], [120, -40]];
+    const connectorPolyline = connectorLane.polyline_xy || [[120, 10], [120, -40], [-120, -40]];
+    const mainWidth = mainCorridor.width_m || 12;
+    const secondaryWidth = secondaryCorridor.width_m || 12;
+    const connectorWidth = connectorLane.width_m || 12;
+    const connectorCenter = [
+        (connectorPolyline[0][0] + connectorPolyline[1][0]) / 2,
+        (connectorPolyline[0][1] + connectorPolyline[1][1]) / 2,
+    ];
+
+    L.rectangle(rectFromCenter(
+        [(mainCenterline[0][0] + mainCenterline[1][0]) / 2, mainCenterline[0][1]],
+        [Math.abs(mainCenterline[1][0] - mainCenterline[0][0]), mainWidth]
+    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('主测试走廊', {permanent:false});
+    L.rectangle(rectFromCenter(
+        [(secondaryCenterline[0][0] + secondaryCenterline[1][0]) / 2, secondaryCenterline[0][1]],
+        [Math.abs(secondaryCenterline[1][0] - secondaryCenterline[0][0]), secondaryWidth]
+    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('副测试走廊', {permanent:false});
+    L.rectangle(rectFromCenter(
+        connectorCenter,
+        [connectorWidth, Math.abs(connectorPolyline[1][1] - connectorPolyline[0][1])]
+    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('闭环连接段', {permanent:false});
+
+    const zones = SCENE_CONTEXT.zones || {};
+    const zoneA = zones.zone_A || {};
+    const zoneB = zones.zone_B || {};
+    const zoneC = zones.zone_C || {};
+    L.rectangle(
+        rectFromCenter(zoneA.center_xy || [-20, 10], zoneA.size_m || [40, 14]),
+        markerStyle('#06b6d4', 'rgba(6,182,212,.25)')
+    ).addTo(sceneOverlayLayer).bindTooltip('Zone A: 均匀缓慢沉降', {permanent:false});
+    L.rectangle(
+        rectFromCenter(zoneB.center_xy || [35, 10], zoneB.size_m || [50, 14]),
+        markerStyle('#f97316', 'rgba(249,115,22,.25)')
+    ).addTo(sceneOverlayLayer).bindTooltip('Zone B: 差异沉降 / 斜坡区', {permanent:false});
+    L.circle([ (zoneC.center_xy || [0, -40])[1], (zoneC.center_xy || [0, -40])[0] ], Object.assign(
+        { radius: zoneC.radius_m || 2 },
+        markerStyle('#ef4444', 'rgba(239,68,68,.25)')
+    )).addTo(sceneOverlayLayer).bindTooltip('Zone C: 局部突变陷阱区', {permanent:false});
+
+    const landmarksCfg = SCENE_CONTEXT.landmarks || {};
+    const landmarks = [
+        { name: 'AGV Spawn', pose: landmarksCfg.agv_spawn_pose_xyzrpy || [20, 12, 0.58, 0, 0, 0], color: '#22c55e' },
+        { name: 'Port Crane', pose: landmarksCfg.port_crane_pose_xyzrpy || [-60, 32, 0, 0, 0, 0], color: '#60a5fa' },
+        { name: 'Container Single', pose: landmarksCfg.container_single_pose_xyzrpy || [36.876, -44.364, 0, 0, 0, 1.57], color: '#f59e0b' },
+        { name: 'Container Stack', pose: landmarksCfg.container_stack_pose_xyzrpy || [-30.84, -76.44, 0, 0, 0, 0], color: '#f59e0b' },
+    ];
+    landmarks.forEach(item => {
+        L.circleMarker([item.pose[1], item.pose[0]], {
+            radius: 4, color: item.color, fillColor: item.color, fillOpacity: .8, weight: 1
+        }).addTo(sceneOverlayLayer).bindTooltip(item.name, {permanent:false});
+    });
+
+    for (let v = -200; v <= 200; v += 20) {
+        L.polyline([[b.min_y, v], [b.max_y, v]], { color:'#162036', weight:1, opacity:.35 }).addTo(sceneOverlayLayer);
+        L.polyline([[v, b.min_x], [v, b.max_x]], { color:'#162036', weight:1, opacity:.35 }).addTo(sceneOverlayLayer);
     }
-    L.polyline(gridLines, { color:'#162036', weight:1, opacity:.5 }).addTo(map);
-    // Origin marker
-    L.circleMarker([0,0], { radius:4, color:'#3b82f6', fillColor:'#3b82f6', fillOpacity:.6, weight:1 }).addTo(map).bindTooltip('原点 (0,0)', { permanent:false, direction:'right' });
-    // Axis labels at intervals
-    for (let v=-80; v<=80; v+=40) {
-        if (v===0) continue;
-        L.marker([v, -95], { icon: L.divIcon({ className:'', html:`<span style="color:#2a3f5f;font-size:8px">${v}m</span>`, iconAnchor:[10,5] }) }).addTo(map);
-        L.marker([-95, v], { icon: L.divIcon({ className:'', html:`<span style="color:#2a3f5f;font-size:8px">${v}m</span>`, iconAnchor:[10,5] }) }).addTo(map);
-    }
+
+    L.circleMarker([0, 0], {
+        radius:4, color:'#3b82f6', fillColor:'#3b82f6', fillOpacity:.6, weight:1
+    }).addTo(sceneOverlayLayer).bindTooltip('仿真原点 (0,0)', {permanent:false, direction:'right'});
+
+    L.marker([185, -195], {
+        icon: L.divIcon({
+            className:'',
+            html:`<span style="color:#64748b;font-size:10px;white-space:nowrap">${SCENE_CONTEXT.profile}</span>`,
+            iconAnchor:[0, 0]
+        })
+    }).addTo(sceneOverlayLayer);
+
+    sceneOverlayLayer.addTo(map);
+    map.fitBounds([southWest, northEast], {padding:[16,16]});
 }
 
 document.getElementById('mapProviderBadge').textContent = '底图: ' + prov.label;
@@ -611,6 +684,9 @@ async function pollMissionStatus(){try{const r=await fetch('/mission/status');co
 // ═══════════════════════════════════════════════════════════════
 document.querySelectorAll('.btn[data-action]').forEach(btn=>{
     btn.addEventListener('click',()=>{fetch('/control/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:btn.dataset.action})}).catch(()=>{})});
+});
+document.getElementById('btnEmergencyStop').addEventListener('click',()=>{
+    fetch('/control/stop',{method:'POST'}).catch(()=>{})
 });
 const KEY_MAP={'w':'speed_up','s':'speed_down','a':'steer_left','d':'steer_right','r':'center_steer','q':'reset_all',' ':'stop'};
 document.addEventListener('keydown',(e)=>{

@@ -3,7 +3,7 @@
 ## Prerequisites Check
 
 ```bash
-# Verify ROS2 Humble is installed
+# Verify ROS 2 is installed
 ros2 --version
 
 # Verify Gazebo Fortress is installed
@@ -21,13 +21,15 @@ python3 --version
 cd /path/to/AGV_sim/src
 
 # Source ROS2
-source /opt/ros/humble/setup.bash
+source scripts/common_env.sh
 
 # Build all packages
 colcon build --symlink-install
 
-# Source the workspace
-source install/setup.bash
+# Re-source so the freshly built workspace overlay is loaded
+source scripts/common_env.sh
+
+# Note: every machine must build its own local install/ overlay
 ```
 
 **Expected output**: `Summary: 5 packages finished`
@@ -35,7 +37,7 @@ source install/setup.bash
 ### 2. Verify Installation
 
 ```bash
-./verify_integration.sh
+./scripts/verify_integration.sh
 ```
 
 All checks should show ✓ (green checkmarks).
@@ -48,22 +50,21 @@ All checks should show ✓ (green checkmarks).
 cd /path/to/AGV_sim/src
 
 # Source environment
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+source scripts/common_env.sh
 
-# Launch harbour scene with AGV
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
+# Launch the default 400 m experiment scene with AGV
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
 ```
 
 **What you should see**:
 - Gazebo window opens
-- Port harbour environment with crane and containers
-- Diff_drive AGV in the center
+- 400m simplified experiment scene with crane and containers
+- `agv_ackermann` vehicle in the harbour scene
 - No error messages in terminal
 
 **Optional**: Disable RViz to save resources:
 ```bash
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py rviz:=false
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py rviz:=false
 ```
 
 ### Terminal 2: Start Web Dashboard
@@ -77,9 +78,8 @@ cd /path/to/AGV_sim/src/web_dashboard
 
 **What you should see**:
 ```
-✓ ROS2 node initialized and subscribed to /diff_drive/odometry
-✓ ROS2 integration active - receiving data from Gazebo
-* Running on http://0.0.0.0:5000
+✓ ROS2 node initialized and subscribed to /agv/odometry
+* Running on http://127.0.0.1:5000
 ```
 
 ### Browser: Open Dashboard
@@ -103,19 +103,18 @@ http://localhost:5000
 cd /path/to/AGV_sim/src
 
 # Source environment
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+source scripts/common_env.sh
 
 # Move forward
-ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 1.0}, angular: {z: 0.0}}"
 
 # Turn left while moving
-ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 1.0}, angular: {z: 0.5}}"
 
 # Stop
-ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0}, angular: {z: 0.0}}"
 ```
 
@@ -159,7 +158,7 @@ source install/setup.bash
 ### Problem: No real-time updates in dashboard
 
 **Solution**:
-1. Check if Gazebo is publishing: `ros2 topic hz /diff_drive/odometry`
+1. Check if Gazebo is publishing: `ros2 topic hz /agv/odometry`
 2. Check Flask logs for "Emitting pose data" messages
 3. Check browser console (F12) for Socket.IO errors
 
@@ -168,7 +167,7 @@ source install/setup.bash
 **Solution**:
 ```bash
 chmod +x web_dashboard/start_server.sh
-chmod +x verify_integration.sh
+chmod +x scripts/verify_integration.sh
 ```
 
 ## Testing the System
@@ -176,16 +175,16 @@ chmod +x verify_integration.sh
 ### 1. Verify ROS2 Topics
 
 ```bash
-# List all diff_drive topics
-ros2 topic list | grep diff_drive
+# List all AGV topics
+ros2 topic list | grep /agv
 
 # Expected output:
-#   /diff_drive/cmd_vel
-#   /diff_drive/odometry
-#   /diff_drive/scan
+#   /agv/cmd_vel
+#   /agv/odometry
+#   /agv/scan
 
 # Check odometry frequency
-ros2 topic hz /diff_drive/odometry
+ros2 topic hz /agv/odometry
 
 # Expected: ~50 Hz
 ```
@@ -232,10 +231,12 @@ AGV_sim/src/
 ├── ros_gz_project_template/     # ROS2 + Gazebo simulation
 │   ├── ros_gz_example_bringup/
 │   │   └── launch/
-│   │       └── harbour_diff_drive.launch.py  ← New launch file
+│   │       ├── simplified_port_agv_terrain_400m.launch.py  ← Default agv_ackermann main-scene launch
+│   │       └── harbour_diff_drive.launch.py                ← Legacy compatibility launch
 │   └── ros_gz_example_gazebo/
 │       └── worlds/
-│           └── harbour_diff_drive.sdf        ← New world file
+│           ├── simplified_port_agv_terrain_400m.sdf        ← Default 400m main scene
+│           └── harbour_diff_drive.sdf                      ← Legacy compatibility world
 ├── harbour_assets_description/  # Port harbour models
 │   └── models/
 │       ├── crane1/
@@ -253,7 +254,7 @@ AGV_sim/src/
 ├── README.md                    # Project overview
 ├── AGENTS.md                    # Development rules
 ├── CLAUDE.md                    # AI assistant guidance
-└── verify_integration.sh        # Verification script
+└── scripts/verify_integration.sh # Verification script
 ```
 
 ## Next Steps
@@ -279,14 +280,14 @@ After successfully running the system:
 colcon build --symlink-install && source install/setup.bash
 
 # Launch
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
 
 # Web
 cd web_dashboard && ./start_server.sh
 
 # Control
-ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 1.0}, angular: {z: 0.5}}"
+ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 1.0}, angular: {z: 0.5}}"
 
 # Verify
-./verify_integration.sh
+./scripts/verify_integration.sh
 ```

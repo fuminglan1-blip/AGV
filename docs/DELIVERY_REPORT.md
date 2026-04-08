@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Successfully completed **Phase 1: Minimal Viable Harbour Integration** for the AGV Digital Twin system. The integration adds port harbour static models to the existing diff_drive AGV simulation while maintaining full web dashboard functionality.
+Successfully completed **Phase 1: Minimal Viable Harbour Integration** for the AGV Digital Twin system. The integration adds port harbour static models around the `agv_ackermann` simulation stack while maintaining full web dashboard functionality.
 
 ## Modifications Summary
 
@@ -22,7 +22,8 @@ Successfully completed **Phase 1: Minimal Viable Harbour Integration** for the A
 ### 3. New Gazebo Scene ✅
 - **File**: `ros_gz_project_template/ros_gz_example_gazebo/worlds/harbour_diff_drive.sdf`
 - **Features**:
-  - Includes diff_drive AGV (unchanged)
+  - Historical filename retained for compatibility; active vehicle is `agv_ackermann`
+  - Includes `agv_ackermann` as the primary vehicle
   - Port crane positioned at (-10, 5, 0)
   - Single container at (8, -3, 0)
   - Container stack at (0, -15, 0)
@@ -31,9 +32,10 @@ Successfully completed **Phase 1: Minimal Viable Harbour Integration** for the A
 ### 4. New Launch File ✅
 - **File**: `ros_gz_project_template/ros_gz_example_bringup/launch/harbour_diff_drive.launch.py`
 - **Features**:
-  - Launches harbour_diff_drive.sdf world
-  - Reuses existing ros_gz_bridge configuration
-  - Maintains /diff_drive/odometry topic
+  - Historical launch filename retained for compatibility
+  - Launches the active harbour world containing `agv_ackermann`
+  - Reuses the active `agv_ackermann` ros_gz_bridge configuration
+  - Maintains `/agv/odometry` and `/agv/cmd_vel`
   - Compatible with existing RViz config
 
 ### 5. Web Dashboard Configuration ✅
@@ -78,12 +80,12 @@ All verification checks passed ✅:
 
 ```
 ✓ harbour_assets_description package found
-✓ /diff_drive/odometry topic exists
-✓ /diff_drive/cmd_vel topic exists
+✓ /agv/odometry topic exists
+✓ /agv/cmd_vel topic exists
 ✓ Web dashboard is responding
 ✓ web_dashboard/app.py exists
-✓ harbour_diff_drive.sdf exists
-✓ harbour_diff_drive.launch.py exists
+✓ harbour_diff_drive.sdf exists (historical filename)
+✓ harbour_diff_drive.launch.py exists (historical filename)
 ```
 
 ## Executed Commands & Results
@@ -102,11 +104,11 @@ ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py rviz:=false
 
 ### Verify Topics
 ```bash
-ros2 topic list | grep diff_drive
+ros2 topic list | grep /agv
 # Output:
-#   /diff_drive/cmd_vel
-#   /diff_drive/odometry
-#   /diff_drive/scan
+#   /agv/cmd_vel
+#   /agv/odometry
+#   /agv/scan
 ```
 
 ### Test Web API
@@ -117,7 +119,7 @@ curl http://localhost:5000/vehicle_state
 
 ### Control AGV
 ```bash
-ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub --once /agv/cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 1.0}, angular: {z: 0.5}}"
 # Result: SUCCESS - Command published
 ```
@@ -133,12 +135,12 @@ ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 - Sufficient for Phase 1 demonstration
 
 ### 2. Preserved Existing Architecture
-**Decision**: Did not modify ros_gz_project_template internals
+**Decision**: Kept changes focused on the active harbour launch chain and reused the existing bridge pattern
 **Rationale**:
-- Maintains backward compatibility
-- Easier to update upstream package
+- Minimizes blast radius inside the template-derived packages
+- Keeps the runtime chain understandable
 - Clear separation of concerns
-- Follows "read-only reference" constraint
+- Avoids unnecessary refactors
 
 ### 3. Configuration Externalization
 **Decision**: Created config.yaml for web dashboard
@@ -211,7 +213,7 @@ ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 - ✅ Build succeeds without errors
 - ✅ Harbour models visible in Gazebo
 - ✅ AGV spawns and moves correctly
-- ✅ /diff_drive/odometry publishes at expected rate
+- ✅ /agv/odometry publishes at expected rate
 - ✅ Web dashboard connects on first try
 - ✅ Real-time position updates in browser
 - ✅ No hardcoded paths in codebase
@@ -222,7 +224,7 @@ ros2 topic pub --once /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 
 Phase 1 integration is **complete and functional**. The system successfully demonstrates:
 - Port harbour environment with static models
-- Operational diff_drive AGV
+- Operational `agv_ackermann` AGV
 - Real-time web visualization
 - Clean, maintainable codebase
 - Comprehensive documentation

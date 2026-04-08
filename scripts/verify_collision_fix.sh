@@ -11,6 +11,15 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common_env.sh"
+
+if [[ "${AGV_WS_SETUP_LOADED:-0}" -ne 1 ]]; then
+    echo -e "${RED}✗${NC} Missing workspace overlay at ${AGV_WS_SETUP}"
+    echo -e "${YELLOW}→${NC} Run 'colcon build --symlink-install' on this machine first"
+    exit 1
+fi
+
 echo "1. Checking Gazebo processes..."
 if ps aux | grep -E "ign gazebo" | grep -v grep > /dev/null; then
     echo -e "${GREEN}✓${NC} Gazebo is running"
@@ -43,19 +52,17 @@ fi
 
 echo ""
 echo "3. Checking ROS2 topics..."
-source /opt/ros/humble/setup.bash
-source install/setup.bash
 
-if ros2 topic list | grep -q "/diff_drive/odometry"; then
-    echo -e "${GREEN}✓${NC} /diff_drive/odometry topic exists"
+if ros2 topic list | grep -q "/agv/odometry"; then
+    echo -e "${GREEN}✓${NC} /agv/odometry topic exists"
 else
-    echo -e "${RED}✗${NC} /diff_drive/odometry topic NOT found"
+    echo -e "${RED}✗${NC} /agv/odometry topic NOT found"
 fi
 
-if ros2 topic list | grep -q "/diff_drive/cmd_vel"; then
-    echo -e "${GREEN}✓${NC} /diff_drive/cmd_vel topic exists"
+if ros2 topic list | grep -q "/agv/cmd_vel"; then
+    echo -e "${GREEN}✓${NC} /agv/cmd_vel topic exists"
 else
-    echo -e "${RED}✗${NC} /diff_drive/cmd_vel topic NOT found"
+    echo -e "${RED}✗${NC} /agv/cmd_vel topic NOT found"
 fi
 
 echo ""

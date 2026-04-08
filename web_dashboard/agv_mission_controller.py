@@ -33,10 +33,13 @@ Configuration: config/demo_routes.yaml
 import json
 import math
 import os
+import signal
+import threading
 import time
 
 import yaml
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
@@ -80,6 +83,8 @@ class AGVMissionController(Node):
         self.waypoints = []
         self.wp_index = 0
         self.running = False
+        self._shutdown_started = False
+        self._shutdown_lock = threading.Lock()
 
         # Current vehicle pose (from odometry)
         self.veh_x = 0.0
@@ -98,9 +103,9 @@ class AGVMissionController(Node):
             String, '/agv/mission_cmd', self._on_mission_cmd, 10)
 
         # Control loop at 10 Hz
-        self.create_timer(0.1, self._control_loop)
+        self.control_timer = self.create_timer(0.1, self._control_loop)
         # Status publish at 2 Hz
-        self.create_timer(0.5, self._publish_status)
+        self.status_timer = self.create_timer(0.5, self._publish_status)
 
         self.get_logger().info(
             f'Mission controller ready — {len(self.routes)} routes loaded')
@@ -108,6 +113,8 @@ class AGVMissionController(Node):
     # ── Odometry callback ─────────────────────────────────────────
 
     def _on_odom(self, msg: Odometry):
+        if self._should_skip_ros_work():
+            return
         self.veh_x = msg.pose.pose.position.x
         self.veh_y = msg.pose.pose.position.y
         q = msg.pose.pose.orientation
@@ -118,6 +125,8 @@ class AGVMissionController(Node):
     # ── Mission command handler ───────────────────────────────────
 
     def _on_mission_cmd(self, msg: String):
+        if self._should_skip_ros_work():
+            return
         cmd = msg.data.strip()
 
         if cmd.startswith('start:'):
@@ -127,6 +136,8 @@ class AGVMissionController(Node):
             self._cancel_mission()
 
     def _start_mission(self, route_name: str):
+        if self._should_skip_ros_work():
+            return
         if route_name not in self.routes:
             self.get_logger().warn(f'Unknown route: {route_name}')
             return
@@ -145,18 +156,20 @@ class AGVMissionController(Node):
             f'Mission started: {route_name} ({len(self.waypoints)} waypoints)')
 
     def _cancel_mission(self):
-        self.running = False
-        self.mode = 'idle'
-        self.route_name = ''
-        self.waypoints = []
-        self.wp_index = 0
-        # Stop the vehicle
+        self._reset_mission_state()
+        if self._shutdown_started:
+            return
+        # Shutdown-time cleanup must not try to publish once the ROS context is
+        # already invalid, otherwise cleanup itself becomes the crash source.
         self._send_cmd('reset_all')
-        self.get_logger().info('Mission cancelled')
+        if self._context_is_valid():
+            self.get_logger().info('Mission cancelled')
 
     # ── Main control loop (10 Hz) ─────────────────────────────────
 
     def _control_loop(self):
+        if self._should_skip_ros_work():
+            return
         if not self.running or self.wp_index >= len(self.waypoints):
             if self.running:
                 # All waypoints reached
@@ -206,6 +219,8 @@ class AGVMissionController(Node):
     # ── Status publisher (2 Hz) ───────────────────────────────────
 
     def _publish_status(self):
+        if self._should_skip_ros_work():
+            return
         status = {
             'mode': self.mode,
             'route_name': self.route_name,
@@ -221,23 +236,96 @@ class AGVMissionController(Node):
 
     # ── Helper ────────────────────────────────────────────────────
 
-    def _send_cmd(self, cmd: str):
+    def _reset_mission_state(self):
+        self.running = False
+        self.mode = 'idle'
+        self.route_name = ''
+        self.waypoints = []
+        self.wp_index = 0
+
+    def _context_is_valid(self) -> bool:
+        try:
+            return rclpy.ok(context=self.context)
+        except Exception:
+            return False
+
+    def _should_skip_ros_work(self) -> bool:
+        return self._shutdown_started or (not self._context_is_valid())
+
+    def _cancel_timers(self):
+        for timer_name in ('control_timer', 'status_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer is None:
+                continue
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
+    def _shutdown_once(self):
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                return
+            self._shutdown_started = True
+            self._cancel_timers()
+            self._reset_mission_state()
+
+        # Send one best-effort reset while the ROS context is still alive.
+        self._send_cmd('reset_all', allow_during_shutdown=True)
+
+    def _send_cmd(self, cmd: str, *, allow_during_shutdown: bool = False):
+        if self._shutdown_started and not allow_during_shutdown:
+            return False
+        if not self._context_is_valid():
+            return False
         msg = String()
         msg.data = cmd
-        self.cmd_pub.publish(msg)
+        try:
+            self.cmd_pub.publish(msg)
+            return True
+        except Exception:
+            # Cleanup paths may race with shutdown; silently skipping here keeps
+            # shutdown logs focused on the real failure.
+            return False
 
 
 def main():
-    rclpy.init()
-    node = AGVMissionController()
+    old_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def _handle_sigterm(signum, frame):
+        raise KeyboardInterrupt()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
+    node = None
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+        rclpy.init()
+        node = AGVMissionController()
+        try:
+            rclpy.spin(node)
+        except (KeyboardInterrupt, ExternalShutdownException):
+            pass
+        except Exception:
+            if node._shutdown_started or not node._context_is_valid():
+                pass
+            else:
+                raise
     finally:
-        node._cancel_mission()
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            signal.signal(signal.SIGTERM, old_sigterm)
+        except Exception:
+            pass
+        if node is not None:
+            node._shutdown_once()
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
+        if node is not None and node._context_is_valid():
+            try:
+                rclpy.shutdown(context=node.context)
+            except Exception:
+                pass
 
 
 if __name__ == '__main__':

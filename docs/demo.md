@@ -10,7 +10,7 @@ cd AGV_sim/src/scripts
 ```
 
 自动打开 3 个 gnome-terminal 窗口:
-1. **Gazebo** — 港口仿真环境
+1. **Gazebo** — 400m 极简实验港口场景
 2. **Controller** — AGV 手动控制器 (键盘交互)
 3. **Web Dashboard** — 任务控制器 + Flask 驾驶舱
 
@@ -28,9 +28,8 @@ cd AGV_sim/src/scripts
 
 ```bash
 # 终端 1: Gazebo 仿真
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
+source scripts/common_env.sh
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
 
 # 终端 2: AGV 控制器
 python3 agv_manual_controller.py
@@ -63,6 +62,7 @@ python3 app.py
 
 ### 3. 风险观察
 - 地图上热力图显示风险区域分布
+- 当前主场景内会标出 Zone A / Zone B / Zone C 的 400m 实验布局
 - 右侧"风险评估"面板实时显示:
   - 风险等级 (低/中/高)
   - 风险分数 (0-1)

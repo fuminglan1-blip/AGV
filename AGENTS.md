@@ -9,9 +9,9 @@ This is a **Port AGV Digital Twin** system integrating ROS2, Gazebo, and web vis
 ## Critical Constraints
 
 ### DO NOT Modify
-- ❌ `ros_gz_project_template/` - This is a read-only reference package
-- ❌ `/diff_drive/odometry` topic name - Web dashboard depends on this
-- ❌ diff_drive robot model - Keep using the simple differential drive AGV
+- ❌ `ros_gz_project_template/` unrelated reference files - treat as read-only unless the active harbour/AGV launch chain requires a targeted fix
+- ❌ Primary `/agv/*` topic names without updating every consumer in the stack
+- ❌ `agv_ackermann` as the supported primary vehicle for Phase 1
 - ❌ Existing ros_gz_bridge configuration - Reuse, don't replace
 
 ### DO NOT Add (Yet)
@@ -97,16 +97,16 @@ source install/setup.bash
 ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 
 # Verify topics
-ros2 topic list | grep diff_drive
-ros2 topic hz /diff_drive/odometry
-ros2 topic echo /diff_drive/odometry --once
+ros2 topic list | grep /agv
+ros2 topic hz /agv/odometry
+ros2 topic echo /agv/odometry --once
 
 # Test web
 cd web_dashboard && ./start_server.sh
 curl http://localhost:5000/vehicle_state
 
 # Control AGV
-ros2 topic pub /diff_drive/cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub /agv/cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 1.0}, angular: {z: 0.5}}"
 ```
 
@@ -129,8 +129,8 @@ ros2 topic pub /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 ### Avoid
 - ❌ Using eventlet with Flask-SocketIO (use threading)
 - ❌ Hardcoding paths like `/home/loong/...`
-- ❌ Modifying ros_gz_project_template
-- ❌ Changing topic names without updating all consumers
+- ❌ Broad modifications in `ros_gz_project_template`
+- ❌ Changing `/agv/*` topic names without updating all consumers
 - ❌ Adding CDN dependencies (breaks offline operation)
 - ❌ Scope creep (adding Phase 2+ features)
 
@@ -138,7 +138,7 @@ ros2 topic pub /diff_drive/cmd_vel geometry_msgs/msg/Twist \
 - ✅ Use threading mode for Socket.IO
 - ✅ Use relative paths or `package://` URIs
 - ✅ Create new packages for integration
-- ✅ Keep topic names consistent
+- ✅ Keep `agv_ackermann + /agv/*` as the single supported runtime path
 - ✅ Download assets to `static/` directory
 - ✅ Focus on Phase 1 objectives
 

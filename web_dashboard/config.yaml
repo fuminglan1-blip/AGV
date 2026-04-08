@@ -2,14 +2,15 @@
 
 # Flask Server
 server:
-  host: "0.0.0.0"
+  # Bind to loopback by default so manual control endpoints stay local-only.
+  # Change to 0.0.0.0 only when you explicitly need remote access.
+  host: "127.0.0.1"
   port: 5000
   debug: false
 
 # ROS2 Integration
-# Active vehicle: change topic to switch between vehicles
-#   agv_ackermann (default):  /agv/odometry
-#   diff_drive (fallback):    /diff_drive/odometry
+# Primary vehicle runtime chain
+#   agv_ackermann: /agv/odometry
 ros2:
   topic: "/agv/odometry"
   message_type: "nav_msgs/msg/Odometry"
@@ -20,6 +21,22 @@ vehicle:
   max_trajectory_points: 500
   default_risk_index: 0.1
   default_scenario: "Standard Operation"
+
+# Scene Profile
+scene:
+  profile: "simplified_port_agv_terrain_400m"
+  title_cn: "400m 极简实验港口场景"
+  description_cn: "定位误差与地形/形变感知验证主场景"
+  default_gazebo_launch: "simplified_port_agv_terrain_400m.launch.py"
+  legacy_gazebo_launch: "harbour_diff_drive.launch.py"
+  world_size_m: [400.0, 400.0]
+  local_map_bounds:
+    min_x: -200.0
+    max_x: 200.0
+    min_y: -200.0
+    max_y: 200.0
+  deformation_zones_file: "../ros_gz_project_template/ros_gz_example_bringup/config/deformation_zones.yaml"
+  risk_layer_mode: "synthetic_compat_deformation_yaml"
 
 # Map Configuration
 map:
@@ -42,4 +59,5 @@ map:
 # Risk Heatmap
 heatmap:
   grid_size: 20
-  simulation_area_size: 100.0  # meters
+  simulation_area_size: 400.0  # meters
+  grid_resolution_m: 1.0

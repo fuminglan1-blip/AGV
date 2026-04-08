@@ -119,6 +119,22 @@
         <geometry>
           <box><size>6.0 2.5 0.5</size></box>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e7</kp>
+              <kd>1e3</kd>
+              <max_vel>0.1</max_vel>
+              <min_depth>0.002</min_depth>
+            </ode>
+          </contact>
+        </surface>
       </collision>
 
       <!--
@@ -129,6 +145,50 @@
         <geometry>
           <box><size>2.5 2.4 2.5</size></box>
         </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e7</kp>
+              <kd>1e3</kd>
+              <max_vel>0.1</max_vel>
+              <min_depth>0.002</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+
+      <!--
+        Collision 3: Front bumper guard.
+        Bridges the small gap between the low body frame and tall cab so the
+        front face remains a solid obstacle against static harbour assets.
+      -->
+      <collision name="collision_front_bumper">
+        <pose>2.9 0 -0.15 0 0 0</pose>
+        <geometry>
+          <box><size>0.35 2.4 1.4</size></box>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e7</kp>
+              <kd>1e3</kd>
+              <max_vel>0.1</max_vel>
+              <min_depth>0.002</min_depth>
+            </ode>
+          </contact>
+        </surface>
       </collision>
     </link>
 

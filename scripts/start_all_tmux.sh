@@ -13,6 +13,16 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${1:-interactive}"
 SESSION="agv"
+printf -v SCRIPT_DIR_Q '%q' "${SCRIPT_DIR}"
+printf -v MODE_Q '%q' "${MODE}"
+
+source "${SCRIPT_DIR}/common_env.sh"
+
+if [[ "${AGV_WS_SETUP_LOADED:-0}" -ne 1 ]]; then
+  echo "[start_all_tmux] Error: workspace overlay is not available on this machine." >&2
+  echo "[start_all_tmux] Run 'colcon build --symlink-install' before launching the full stack." >&2
+  exit 1
+fi
 
 if ! command -v tmux &>/dev/null; then
   echo "Error: tmux not found. Install with: sudo apt install tmux"
@@ -23,15 +33,16 @@ fi
 tmux kill-session -t "${SESSION}" 2>/dev/null || true
 
 echo "[start_all_tmux] Creating tmux session '${SESSION}' (controller mode: ${MODE})..."
+echo "[start_all_tmux] Default Gazebo scene: simplified_port_agv_terrain_400m"
 
 # Create session with first window: Gazebo
-tmux new-session -d -s "${SESSION}" -n "gazebo" "'${SCRIPT_DIR}/start_gazebo.sh'; exec bash"
+tmux new-session -d -s "${SESSION}" -n "gazebo" "cd ${SCRIPT_DIR_Q} && ./start_gazebo.sh; exec bash"
 
 # Second window: Controller
-tmux new-window -t "${SESSION}" -n "controller" "sleep 5; '${SCRIPT_DIR}/start_controller.sh' '${MODE}'; exec bash"
+tmux new-window -t "${SESSION}" -n "controller" "sleep 5; cd ${SCRIPT_DIR_Q} && ./start_controller.sh ${MODE_Q}; exec bash"
 
 # Third window: Web Dashboard
-tmux new-window -t "${SESSION}" -n "web" "sleep 7; '${SCRIPT_DIR}/start_web_dashboard.sh'; exec bash"
+tmux new-window -t "${SESSION}" -n "web" "sleep 7; cd ${SCRIPT_DIR_Q} && ./start_web_dashboard.sh; exec bash"
 
 # Select first window
 tmux select-window -t "${SESSION}:0"

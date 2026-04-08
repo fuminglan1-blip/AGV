@@ -17,6 +17,7 @@ Legacy endpoints preserved for backward compatibility.
 
 import math
 import os
+import socket
 import sys
 import time
 from collections import deque
@@ -34,7 +35,6 @@ for _mod in ('eventlet', 'eventlet.wsgi', 'eventlet.green', 'eventlet.green.thre
 
 import yaml
 from flask import Flask, jsonify, render_template, request
-from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 for _mod in _blocked:
@@ -45,6 +45,7 @@ del _blocked
 # ROS2
 import json
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
@@ -62,8 +63,7 @@ _insar_provider = ZhoukouProvider()
 # App setup
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading',
+socketio = SocketIO(app, async_mode='threading',
                     logger=False, engineio_logger=False)
 
 # ---------------------------------------------------------------------------
@@ -96,6 +96,12 @@ alert_history: deque = deque(maxlen=100)
 
 # System start time
 _start_time = time.time()
+
+# Shutdown coordination for Flask main thread + ROS2 spin thread
+_shutdown_event = threading.Event()
+_shutdown_lock = threading.Lock()
+_shutdown_started = False
+_ros2_spin_thread: threading.Thread | None = None
 
 # ---------------------------------------------------------------------------
 # Alert helpers
@@ -149,6 +155,66 @@ except Exception:
     _cfg = {}
 
 ROS2_TOPIC = _cfg.get('ros2', {}).get('topic', '/agv/odometry')
+_server_cfg = _cfg.get('server', {})
+SERVER_HOST = _server_cfg.get('host', '127.0.0.1')
+SERVER_PORT = int(_server_cfg.get('port', 5000))
+SERVER_DEBUG = bool(_server_cfg.get('debug', False))
+_scene_cfg = _cfg.get('scene', {}) if isinstance(_cfg.get('scene'), dict) else {}
+
+
+def _resolve_config_path(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    if os.path.isabs(path_value):
+        return path_value
+    return os.path.normpath(os.path.join(os.path.dirname(_cfg_path), path_value))
+
+
+def _load_yaml_file(path_value: str | None) -> dict:
+    resolved = _resolve_config_path(path_value)
+    if not resolved:
+        return {}
+    try:
+        with open(resolved, 'r', encoding='utf-8') as handle:
+            data = yaml.safe_load(handle) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+_risk_layer_meta = risk_layer.get_scene_metadata()
+_zones_cfg = _load_yaml_file(_scene_cfg.get('deformation_zones_file'))
+_default_bounds = {'min_x': -200.0, 'max_x': 200.0, 'min_y': -200.0, 'max_y': 200.0}
+_bounds_cfg = _scene_cfg.get('local_map_bounds', {}) if isinstance(_scene_cfg.get('local_map_bounds'), dict) else {}
+LOCAL_MAP_BOUNDS = {
+    key: float(_bounds_cfg.get(key, _default_bounds[key]))
+    for key in _default_bounds
+}
+WORLD_SIZE_M = _scene_cfg.get('world_size_m', _risk_layer_meta.get('world_size_m', [400.0, 400.0]))
+SCENE_PROFILE = _scene_cfg.get('profile', _risk_layer_meta.get('profile', 'simplified_port_agv_terrain_400m'))
+SCENE_TITLE_CN = _scene_cfg.get('title_cn', '400m 极简实验港口场景')
+SCENE_DESCRIPTION_CN = _scene_cfg.get('description_cn', '定位误差与地形/形变感知验证主场景')
+DEFAULT_GAZEBO_LAUNCH = _scene_cfg.get('default_gazebo_launch', 'simplified_port_agv_terrain_400m.launch.py')
+LEGACY_GAZEBO_LAUNCH = _scene_cfg.get('legacy_gazebo_launch', 'harbour_diff_drive.launch.py')
+DEFORMATION_ZONES_FILE = (
+    _resolve_config_path(_scene_cfg.get('deformation_zones_file'))
+    or _risk_layer_meta.get('deformation_zones_file')
+)
+DEFORMATION_ZONES_ID = os.path.basename(DEFORMATION_ZONES_FILE) if DEFORMATION_ZONES_FILE else 'deformation_zones.yaml'
+SCENE_CONTEXT = {
+    'profile': SCENE_PROFILE,
+    'title_cn': SCENE_TITLE_CN,
+    'description_cn': SCENE_DESCRIPTION_CN,
+    'world_size_m': WORLD_SIZE_M,
+    'default_gazebo_launch': DEFAULT_GAZEBO_LAUNCH,
+    'legacy_gazebo_launch': LEGACY_GAZEBO_LAUNCH,
+    'local_map_bounds': LOCAL_MAP_BOUNDS,
+    'risk_layer_mode': _risk_layer_meta.get('mode', 'synthetic_compat'),
+    'deformation_zones_file': DEFORMATION_ZONES_ID,
+    'corridors': _zones_cfg.get('corridors', _risk_layer_meta.get('corridors', {})),
+    'zones': _zones_cfg.get('zones', _risk_layer_meta.get('zones', {})),
+    'landmarks': _zones_cfg.get('landmarks', _risk_layer_meta.get('landmarks', {})),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +226,20 @@ def quaternion_to_yaw(q) -> float:
     cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
     yaw_deg = math.degrees(math.atan2(siny_cosp, cosy_cosp))
     return yaw_deg % 360.0
+
+
+def _check_server_port_available(host: str, port: int) -> tuple[bool, str | None]:
+    """Return whether the configured host/port can be bound by Flask."""
+    bind_host = '0.0.0.0' if host in ('', '*') else host
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((bind_host, port))
+    except OSError as exc:
+        return False, str(exc)
+    finally:
+        sock.close()
+    return True, None
 
 
 def _build_agv_state_msg() -> dict:
@@ -214,6 +294,11 @@ def _build_system_status_msg() -> dict:
         'websocket': 'connected',
         'last_update': datetime.fromtimestamp(last_update).isoformat() if last_update > 0 else None,
         'active_vehicle': 'agv_ackermann',
+        'scene_profile': SCENE_PROFILE,
+        'scene_title_cn': SCENE_TITLE_CN,
+        'world_size_m': WORLD_SIZE_M,
+        'local_map_bounds': LOCAL_MAP_BOUNDS,
+        'risk_layer_mode': SCENE_CONTEXT['risk_layer_mode'],
         'uptime_s': round(time.time() - _start_time, 1),
     }
 
@@ -224,6 +309,57 @@ def _build_mission_status_msg() -> dict:
         ms = dict(mission_state)
     ms['timestamp'] = datetime.now().isoformat()
     return ms
+
+
+def _ros2_context_ok(node: Node | None = None) -> bool:
+    """Return whether the ROS2 context is still valid for this process."""
+    context = getattr(node, 'context', None) if node is not None else None
+    try:
+        if context is not None:
+            return rclpy.ok(context=context)
+        return rclpy.ok()
+    except Exception:
+        return False
+
+
+def _safe_destroy_node(node: Node | None) -> None:
+    """Best-effort node destruction used during shutdown paths."""
+    if node is None:
+        return
+    try:
+        node.destroy_node()
+    except Exception:
+        pass
+
+
+def _shutdown_ros2_once() -> None:
+    """Centralize ROS2 cleanup so shutdown/destroy only happen once."""
+    global _shutdown_started, _ros2_node, _ros2_spin_thread
+
+    with _shutdown_lock:
+        if _shutdown_started:
+            return
+        _shutdown_started = True
+        _shutdown_event.set()
+        node = _ros2_node
+        spin_thread = _ros2_spin_thread
+        _ros2_node = None
+        _ros2_spin_thread = None
+
+    if node is None:
+        return
+
+    if _ros2_context_ok(node):
+        try:
+            rclpy.shutdown(context=node.context)
+        except Exception:
+            pass
+
+    if (spin_thread is not None and spin_thread.is_alive() and
+            spin_thread is not threading.current_thread()):
+        spin_thread.join(timeout=2.0)
+
+    _safe_destroy_node(node)
 
 
 # ---------------------------------------------------------------------------
@@ -320,26 +456,35 @@ class AGVPoseSubscriber(Node):
 def _ros2_spin(node: Node) -> None:
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     except Exception as exc:
-        print(f'[ROS2] spin error: {exc}')
-    finally:
-        node.destroy_node()
+        if not _shutdown_event.is_set() and _ros2_context_ok(node):
+            print(f'[ROS2] spin error: {exc}')
 
 
 _ros2_node: AGVPoseSubscriber | None = None
 
 
 def initialize_ros2():
-    global _ros2_node
+    global _ros2_node, _ros2_spin_thread
+    node: AGVPoseSubscriber | None = None
     try:
         rclpy.init()
         node = AGVPoseSubscriber()
         _ros2_node = node
-        t = threading.Thread(target=_ros2_spin, args=(node,), daemon=True)
-        t.start()
+        _ros2_spin_thread = threading.Thread(
+            target=_ros2_spin, args=(node,), daemon=True, name='ros2-spin')
+        _ros2_spin_thread.start()
         print('✓ ROS2 node initialised – subscribed to', ROS2_TOPIC)
         return node
     except Exception as exc:
+        _safe_destroy_node(node)
+        if _ros2_context_ok():
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
         print(f'✗ ROS2 init failed: {exc}')
         print('  Flask will run without real-time robot data.')
         return None
@@ -351,12 +496,11 @@ def initialize_ros2():
 
 def _broadcast_system_status():
     """Periodically emit system_status to all clients."""
-    while True:
+    while not _shutdown_event.wait(3.0):
         try:
             socketio.emit('system_status', _build_system_status_msg(), namespace='/')
         except Exception:
             pass
-        time.sleep(3)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +522,7 @@ def _get_heatmap() -> list:
 
 @app.route('/')
 def index():
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', scene_context=SCENE_CONTEXT)
 
 
 @app.route('/health')
@@ -390,7 +534,10 @@ def health():
         'status': 'ok',
         'ros2_active': ros2_ok,
         'last_odom_age_s': round(time.time() - last_update, 2) if last_update > 0 else None,
-        'risk_layer': 'synthetic_grid',
+        'scene_profile': SCENE_PROFILE,
+        'world_size_m': WORLD_SIZE_M,
+        'local_map_bounds': LOCAL_MAP_BOUNDS,
+        'risk_layer': SCENE_CONTEXT['risk_layer_mode'],
         'risk_fusion': 'rule_based',
         'endpoints': [
             '/vehicle_state', '/trajectory', '/risk/current', '/risk/heatmap',
@@ -501,7 +648,7 @@ def control_stop():
             cmd.data = 'cancel'
             _ros2_node.mission_cmd_pub.publish(cmd)
             stop = String()
-            stop.data = 'reset_all'
+            stop.data = 'emergency_stop'
             _ros2_node.control_cmd_pub.publish(stop)
         except Exception:
             pass
@@ -597,6 +744,9 @@ def api_risk_heatmap():
         'count': len(data),
         'grid_resolution': risk_layer.GRID_RES_M,
         'grid_range': [risk_layer.GRID_MIN_M, risk_layer.GRID_MAX_M],
+        'scene_profile': SCENE_PROFILE,
+        'risk_layer_mode': SCENE_CONTEXT['risk_layer_mode'],
+        'deformation_zones_file': DEFORMATION_ZONES_ID,
         'points': data,
     })
 
@@ -631,7 +781,7 @@ def api_demo_reset():
     if _ros2_node:
         try:
             stop = String()
-            stop.data = 'reset_all'
+            stop.data = 'emergency_stop'
             _ros2_node.control_cmd_pub.publish(stop)
             cancel = String()
             cancel.data = 'cancel'
@@ -738,11 +888,22 @@ def handle_disconnect():
 # ═══════════════════════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
+    browser_host = 'localhost' if SERVER_HOST in ('127.0.0.1', '0.0.0.0') else SERVER_HOST
+    port_ok, port_error = _check_server_port_available(SERVER_HOST, SERVER_PORT)
+    if not port_ok:
+        print(f'✗ Flask startup blocked: {SERVER_HOST}:{SERVER_PORT} is already in use.')
+        print(f'  Bind error: {port_error}')
+        print('  Resolve the port conflict, then restart the dashboard.')
+        print(f'  Suggested checks: ss -ltnp "( sport = :{SERVER_PORT} )" or lsof -i :{SERVER_PORT}')
+        sys.exit(1)
+
     print('=' * 60)
     print('  港口 AGV 数字孪生 — 开发期后端服务')
     print('  Port AGV Digital Twin — Development Backend')
     print('=' * 60)
-    print('  http://localhost:5000')
+    print(f'  http://{browser_host}:{SERVER_PORT}')
+    print(f'  默认主场景: {SCENE_PROFILE} ({SCENE_TITLE_CN})')
+    print(f'  默认 Gazebo 启动: ros2 launch ros_gz_example_bringup {DEFAULT_GAZEBO_LAUNCH}')
     print()
     print('  统一接口 (Unified API):')
     print('    GET  /api/system/status   系统状态')
@@ -759,6 +920,7 @@ if __name__ == '__main__':
     print('    system_status, mission_status, vehicle_pose(legacy)')
     print()
     print(f'  数据管道: {ROS2_TOPIC} → terrain_query → risk_fusion → WS push')
+    print(f'  风险层模式: {SCENE_CONTEXT["risk_layer_mode"]}')
     print('=' * 60)
 
     ros_node = initialize_ros2()
@@ -776,10 +938,10 @@ if __name__ == '__main__':
     print('\n按 Ctrl+C 停止服务.\n')
 
     try:
-        socketio.run(app, host='0.0.0.0', port=5000,
+        socketio.run(app, host=SERVER_HOST, port=SERVER_PORT,
+                     debug=SERVER_DEBUG,
                      allow_unsafe_werkzeug=True, use_reloader=False)
     except KeyboardInterrupt:
         print('\n正在关闭…')
     finally:
-        if ros_node:
-            rclpy.shutdown()
+        _shutdown_ros2_once()

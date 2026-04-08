@@ -9,7 +9,7 @@
 已将所有外部依赖下载到本地 `static/` 目录：
 
 ```
-backend/
+web_dashboard/
 ├── static/
 │   ├── css/
 │   │   ├── leaflet.css
@@ -32,26 +32,29 @@ backend/
 
 ```bash
 # 在终端 1 中启动 Gazebo
-cd /home/loong/AGV_sim/src/ros_gz_project_template
-source /opt/ros/humble/setup.bash
-colcon build
-source install/setup.bash
-ros2 launch ros_gz_example_bringup diff_drive.launch.py
+cd /path/to/AGV_sim/src
+source scripts/common_env.sh
+colcon build --symlink-install
+source scripts/common_env.sh
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
+
+# legacy 兼容入口仍保留:
+# ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 ```
 
 ### 2. 启动 Flask 后端
 
 ```bash
 # 在终端 2 中启动后端
-cd /home/loong/AGV_sim/src/backend
-source /opt/ros/humble/setup.bash
+cd /path/to/AGV_sim/src/web_dashboard
+source ../scripts/common_env.sh
 python3 app.py
 ```
 
 或使用启动脚本：
 
 ```bash
-cd /home/loong/AGV_sim/src/backend
+cd /path/to/AGV_sim/src/web_dashboard
 ./start_server.sh
 ```
 
@@ -64,11 +67,11 @@ cd /home/loong/AGV_sim/src/backend
 ### 检查 ROS2 话题
 
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 topic list | grep diff_drive
-# 应该看到：/diff_drive/odometry
+source /path/to/AGV_sim/src/scripts/common_env.sh
+ros2 topic list | grep /agv
+# 应该看到：/agv/odometry
 
-ros2 topic echo /diff_drive/odometry --once
+ros2 topic echo /agv/odometry --once
 # 应该看到实时的里程计数据
 ```
 
@@ -111,7 +114,7 @@ curl http://localhost:5000/vehicle_state
 ```
 Gazebo Simulation
     ↓ (发布)
-/diff_drive/odometry (ROS2 Topic)
+/agv/odometry (ROS2 Topic)
     ↓ (订阅)
 Flask Backend (ROS2 Node)
     ↓ (Socket.IO)
@@ -131,7 +134,7 @@ Web Dashboard (浏览器)
 
 **解决方法：**
 1. 确认 Gazebo 正在运行
-2. 确认 ROS2 话题正在发布：`ros2 topic hz /diff_drive/odometry`
+2. 确认 ROS2 话题正在发布：`ros2 topic hz /agv/odometry`
 3. 检查 Flask 终端输出，应该看到 "Emitting pose data" 消息
 
 ### 问题：地图不显示

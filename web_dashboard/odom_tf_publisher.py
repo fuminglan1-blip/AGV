@@ -14,7 +14,8 @@ odom frame.
 
 Usage:
     python3 odom_tf_publisher.py
-    # or launched from harbour_diff_drive.launch.py
+    # or launched from simplified_port_agv_terrain_400m.launch.py
+    # legacy compatibility launch: harbour_diff_drive.launch.py
 """
 
 import rclpy

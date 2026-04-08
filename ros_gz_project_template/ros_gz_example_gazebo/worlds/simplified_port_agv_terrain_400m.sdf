@@ -1,0 +1,269 @@
+<?xml version="1.0" ?>
+<!--
+  Simplified Port AGV Terrain World (400 m × 400 m)
+
+  Purpose:
+    A minimal, repeatable Gazebo experiment scene for the current
+    agv_ackermann + /agv/* runtime path. It is intentionally not a full port.
+
+  Design constraints:
+    - Keep the existing primary vehicle: agv_ackermann
+    - Reuse only existing port-semantic assets:
+        ground_plane, port_crane, container_single, container_stack
+    - Preserve /agv/cmd_vel, /agv/odometry and the current ros_gz bridge chain
+    - Keep world name "demo" so the existing bridge config remains valid
+
+  Experiment layout:
+    - Main corridor:      (-120, 10)   -> (120, 10),  width 12 m
+    - Secondary corridor: (-120, -40)  -> (120, -40), width 12 m
+    - Connector lane:     (120, 10) -> (120, -40) -> (-120, -40)
+
+  Deformation zones:
+    Zone A / B / C are exposed in a sibling YAML parameter file and visualized
+    in this world as markers. They are currently annotation/parameter layers,
+    not true negative terrain geometry, because the phase-1 runtime still uses a
+    single flat 400 × 400 ground plane for maximum stability.
+-->
+<sdf version="1.8">
+  <world name="demo">
+
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_update_rate>1000</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>50</iters>
+          <sor>1.3</sor>
+        </solver>
+        <constraints>
+          <cfm>0.0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>10.0</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+
+    <plugin
+      filename="ignition-gazebo-physics-system"
+      name="ignition::gazebo::systems::Physics">
+    </plugin>
+
+    <plugin
+      filename="ignition-gazebo-sensors-system"
+      name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <plugin
+      filename="ignition-gazebo-scene-broadcaster-system"
+      name="ignition::gazebo::systems::SceneBroadcaster">
+    </plugin>
+
+    <plugin
+      filename="ignition-gazebo-user-commands-system"
+      name="ignition::gazebo::systems::UserCommands">
+    </plugin>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Flat 400 m × 400 m operating apron -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>400 400</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>1e6</kp>
+                <kd>100</kd>
+                <max_vel>0.1</max_vel>
+                <min_depth>0.001</min_depth>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>400 400</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.50 0.50 0.50 1</ambient>
+            <diffuse>0.60 0.60 0.60 1</diffuse>
+            <specular>0.40 0.40 0.40 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Corridor overlays: visual-only markers for repeatable experiment paths -->
+    <model name="main_test_corridor_overlay">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <pose>0 10 0.005 0 0 0</pose>
+          <geometry>
+            <box><size>240 12 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>0.10 0.18 0.26 0.70</ambient>
+            <diffuse>0.12 0.22 0.34 0.70</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="secondary_test_corridor_overlay">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <pose>0 -40 0.005 0 0 0</pose>
+          <geometry>
+            <box><size>240 12 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>0.10 0.18 0.26 0.70</ambient>
+            <diffuse>0.12 0.22 0.34 0.70</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="connector_test_corridor_overlay">
+      <static>true</static>
+      <link name="link">
+        <visual name="vertical_leg">
+          <pose>120 -15 0.005 0 0 0</pose>
+          <geometry>
+            <box><size>12 50 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>0.10 0.18 0.26 0.70</ambient>
+            <diffuse>0.12 0.22 0.34 0.70</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Deformation zone markers: visible now, physical patches reserved for next stage -->
+    <model name="zone_a_uniform_settlement_marker">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <pose>-20 10 0.01 0 0 0</pose>
+          <geometry>
+            <box><size>40 14 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.00 0.35 0.85 0.55</ambient>
+            <diffuse>0.05 0.45 0.95 0.55</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="zone_b_differential_slope_marker">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <pose>35 10 0.01 0 0 0</pose>
+          <geometry>
+            <box><size>50 14 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.95 0.55 0.05 0.55</ambient>
+            <diffuse>0.98 0.62 0.08 0.55</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="zone_c_local_trap_marker">
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <pose>0 -40 0.015 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>2</radius><length>0.03</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.80 0.10 0.10 0.65</ambient>
+            <diffuse>0.90 0.15 0.15 0.65</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Primary vehicle: unchanged agv_ackermann model and /agv/* bridge contract -->
+    <model name="agv_ackermann">
+      <self_collide>false</self_collide>
+      <pose>20 12 0.58 0 0 0</pose>
+
+      <include merge="true">
+        <uri>package://ros_gz_example_description/models/agv_ackermann</uri>
+      </include>
+
+      <plugin
+        filename="ignition-gazebo-joint-state-publisher-system"
+        name="ignition::gazebo::systems::JointStatePublisher">
+      </plugin>
+
+      <plugin
+        filename="ignition-gazebo-pose-publisher-system"
+        name="ignition::gazebo::systems::PosePublisher">
+        <publish_link_pose>true</publish_link_pose>
+        <use_pose_vector_msg>true</use_pose_vector_msg>
+        <static_publisher>true</static_publisher>
+        <static_update_frequency>10</static_update_frequency>
+      </plugin>
+    </model>
+
+    <!-- Existing static landmarks / obstacles kept at user-provided poses -->
+    <include>
+      <uri>package://harbour_assets_description/models/crane1</uri>
+      <name>port_crane</name>
+      <pose>-60 32 0 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>package://harbour_assets_description/models/container40</uri>
+      <name>container_single</name>
+      <pose>36.876 -44.364 0 0 0 1.57</pose>
+    </include>
+
+    <include>
+      <uri>package://harbour_assets_description/models/container-multi-stack</uri>
+      <name>container_stack</name>
+      <pose>-30.840 -76.440 0 0 0 0</pose>
+    </include>
+
+  </world>
+</sdf>

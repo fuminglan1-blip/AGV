@@ -5,13 +5,11 @@
 #   ./start_controller.sh headless     # headless mode (remote control only)
 set -eo pipefail
 
-SRC_DIR="/home/loong/AGV_sim/src"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MODE="${1:-interactive}"
 
-set +u
-source /opt/ros/humble/setup.bash
-source "${SRC_DIR}/install/setup.bash"
-set -u
+source "${SCRIPT_DIR}/common_env.sh"
 
 cd "${SRC_DIR}"
 

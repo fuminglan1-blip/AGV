@@ -16,6 +16,11 @@
   "websocket": "connected",
   "last_update": "2026-04-01T10:30:00",
   "active_vehicle": "agv_ackermann",
+  "scene_profile": "simplified_port_agv_terrain_400m",
+  "scene_title_cn": "400m 极简实验港口场景",
+  "world_size_m": [400.0, 400.0],
+  "local_map_bounds": {"min_x": -200.0, "max_x": 200.0, "min_y": -200.0, "max_y": 200.0},
+  "risk_layer_mode": "synthetic_compat_deformation_yaml",
   "uptime_s": 3600.5
 }
 ```
@@ -29,7 +34,7 @@ AGV 最新状态。
 {
   "timestamp": "2026-04-01T10:30:00",
   "id": "agv-001",
-  "position": {"x": 5.0, "y": 3.0, "z": 0.0},
+  "position": {"x": 20.0, "y": 12.0, "z": 0.0},
   "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": 45.0},
   "speed": 1.2,
   "mode": "mission",
@@ -81,9 +86,11 @@ AGV 历史轨迹。
 {
   "count": 1200,
   "grid_resolution": 1.0,
-  "grid_range": [-100.0, 100.0],
+  "grid_range": [-200.0, 200.0],
+  "scene_profile": "simplified_port_agv_terrain_400m",
+  "risk_layer_mode": "synthetic_compat_deformation_yaml",
   "points": [
-    {"x": -15.0, "y": 8.0, "risk": 0.55},
+    {"x": -20.0, "y": 10.0, "risk": 0.26},
     ...
   ]
 }

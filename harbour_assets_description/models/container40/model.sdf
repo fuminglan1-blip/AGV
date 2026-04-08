@@ -3,18 +3,26 @@
   <model name="container40">
     <static>true</static>
     <link name='chassis'>
-      <pose>0 0 1.3 0 0 0</pose>
+      <!--
+        The SketchUp-exported DAE is not centered at the model origin.
+        Keep the link at ground level and align the simplified collision box
+        to the mesh's measured bounds instead of assuming a centered container.
+      -->
+      <pose>0 0 0 0 0 0</pose>
 
       <!--
-        COLLISION: Simple box primitive instead of DAE mesh.
-        Reason: Original CONTAINER40.dae causes DART/ODE crash.
-        Standard 40ft container: 12.192m × 2.438m × 2.591m
-        Simplified to: 12m × 2.4m × 2.6m
+        COLLISION: Simple box primitive matched to the exported DAE bounds.
+        Reason: Original CONTAINER40.dae carries internal translation, so a
+        centered collision box leaves much of the visible mesh non-solid.
+        Measured mesh bounds:
+          size   ≈ 12.20 × 2.44 × 2.59 m
+          center ≈ (6.09, 1.22, 1.30) in the link frame
       -->
       <collision name='collision'>
+        <pose>6.091 1.219 1.296 0 0 0</pose>
         <geometry>
           <box>
-            <size>12.0 2.4 2.6</size>
+            <size>12.201 2.439 2.591</size>
           </box>
         </geometry>
         <!--

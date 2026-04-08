@@ -1,0 +1,73 @@
+scene:
+  name: simplified_port_agv_terrain_400m
+  frame_id: world
+  world_name: demo
+  ground_plane_size_m: [400.0, 400.0]
+  notes:
+    - "Serves the current agv_ackermann + /agv/* runtime path."
+    - "Zone A/B/C are parameterized here for reuse by Gazebo, risk logic, and UI overlays."
+    - "Current SDF expresses these zones as markers; true negative terrain patches are deferred."
+
+corridors:
+  main_test_corridor:
+    centerline_xy:
+      - [-120.0, 10.0]
+      - [120.0, 10.0]
+    width_m: 12.0
+    purpose: straight_repeatability
+
+  secondary_test_corridor:
+    centerline_xy:
+      - [-120.0, -40.0]
+      - [120.0, -40.0]
+    width_m: 12.0
+    purpose: repeat_pass_and_recovery
+
+  connector_lane:
+    polyline_xy:
+      - [120.0, 10.0]
+      - [120.0, -40.0]
+      - [-120.0, -40.0]
+    width_m: 12.0
+    purpose: closed_loop
+
+zones:
+  zone_A:
+    name: zone_A_uniform_settlement
+    type: uniform_settlement
+    shape: rectangle
+    center_xy: [-20.0, 10.0]
+    size_m: [40.0, 14.0]
+    elevation_delta_m: -0.05
+    implementation: annotation_only
+    world_marker_model: zone_a_uniform_settlement_marker
+    future_physical_hook: replace_with_local_height_patch
+
+  zone_B:
+    name: zone_B_differential_slope
+    type: differential_settlement
+    shape: rectangle_gradient
+    center_xy: [35.0, 10.0]
+    size_m: [50.0, 14.0]
+    left_edge_delta_z_m: 0.0
+    right_edge_delta_z_m: -0.08
+    implementation: annotation_only
+    world_marker_model: zone_b_differential_slope_marker
+    future_physical_hook: replace_with_sloped_patch
+
+  zone_C:
+    name: zone_C_local_trap
+    type: local_sudden_drop
+    shape: circle
+    center_xy: [0.0, -40.0]
+    radius_m: 2.0
+    depth_m: 0.10
+    implementation: annotation_only
+    world_marker_model: zone_c_local_trap_marker
+    future_physical_hook: replace_with_local_depression_patch
+
+landmarks:
+  agv_spawn_pose_xyzrpy: [20.0, 12.0, 0.58, 0.0, 0.0, 0.0]
+  port_crane_pose_xyzrpy: [-60.0, 32.0, 0.0, 0.0, 0.0, 0.0]
+  container_single_pose_xyzrpy: [36.876, -44.364, 0.0, 0.0, 0.0, 1.57]
+  container_stack_pose_xyzrpy: [-30.840, -76.440, 0.0, 0.0, 0.0, 0.0]

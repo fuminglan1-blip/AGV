@@ -5,6 +5,8 @@
   Port harbour environment with Ackermann-steered AGV for digital twin simulation.
   Includes static harbour models: crane, containers, and port facilities.
   NOTE: diff_drive has been removed from this world (archived, not deleted).
+  NOTE: This world is now a legacy compatibility scene. The default main scene
+        is simplified_port_agv_terrain_400m.sdf.
 
   Control commands:
     ros2 topic pub /agv/cmd_vel geometry_msgs/msg/Twist \
@@ -94,6 +96,11 @@
     </light>
 
     <!-- Ground plane (港口地面) -->
+    <!--
+      Layout scale-up: enlarge the traversable harbour apron from 100 m to
+      400 m so the AGV keeps its real-world size while the operating scene
+      gains roughly 4x more spatial extent.
+    -->
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -101,7 +108,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>100 100</size>
+              <size>400 400</size>
             </plane>
           </geometry>
           <!--
@@ -131,7 +138,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>100 100</size>
+              <size>400 400</size>
             </plane>
           </geometry>
           <material>
@@ -152,8 +159,11 @@
     <!-- AGV Ackermann — Primary vehicle (港口集卡 Ackermann 转向) -->
     <model name="agv_ackermann">
       <self_collide>false</self_collide>
-      <!-- Spawn at (5,3) — visible in default Gazebo camera view -->
-      <pose>5 3 0.58 0 0 0</pose>
+      <!--
+        Spawn scaled with the harbour layout so the vehicle still starts inside
+        the main operating lane after the scene is expanded by ~4x.
+      -->
+      <pose>20 12 0.58 0 0 0</pose>
 
       <include merge="true">
         <uri>package://ros_gz_example_description/models/agv_ackermann</uri>
@@ -186,28 +196,35 @@
 
     <!-- Port Crane (岸桥) -->
     <!-- Positioned to the left side, away from AGV spawn -->
+    <!-- Layout expanded ~4x: keep orientation, scale only planar offset. -->
     <include>
       <uri>package://harbour_assets_description/models/crane1</uri>
       <name>port_crane</name>
-      <pose>-15 8 0 0 0 0</pose>
+      <pose>-60 32 0 0 0 0</pose>
     </include>
 
     <!-- Container 40ft (集装箱) -->
     <!--
-      FIX: Moved from (8,-3) to (8,-5) to increase clearance from AGV.
-      Closer placement risked contact at spawn causing physics instability.
+      The SketchUp-exported mesh is not centered at the model origin.
+      This pose compensates for the mesh / collision offset so the visible
+      container and its collision box both land in the intended harbour lane.
+      The planar placement is scaled ~4x with the rest of the layout while the
+      container model itself keeps real-world dimensions.
     -->
     <include>
       <uri>package://harbour_assets_description/models/container40</uri>
       <name>container_single</name>
-      <pose>8 -5 0 0 0 1.57</pose>
+      <pose>36.876 -44.364 0 0 0 1.57</pose>
     </include>
 
     <!-- Container Stack (集装箱堆) -->
+    <!-- Same compensation principle as container_single: keep the visible mesh
+         and the simplified collision volume aligned while preserving the
+         original intended stack location in the scene, scaled ~4x in layout. -->
     <include>
       <uri>package://harbour_assets_description/models/container-multi-stack</uri>
       <name>container_stack</name>
-      <pose>-5 -15 0 0 0 0</pose>
+      <pose>-30.840 -76.440 0 0 0 0</pose>
     </include>
 
   </world>

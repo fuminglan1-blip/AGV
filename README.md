@@ -1,8 +1,9 @@
 # 港口 AGV 数字孪生 — Port AGV Digital Twin
 
-ROS 2 Humble + Gazebo Fortress + Flask + Leaflet 港口 AGV 实时数字孪生系统。
+ROS 2 Humble / Jazzy + Gazebo Fortress + Flask + Leaflet 港口 AGV 实时数字孪生系统。
 
 **当前主车: `agv_ackermann`** (Ackermann 转向港口卡车)
+**当前默认主场景: `simplified_port_agv_terrain_400m`** (400m 极简实验港口场景)
 
 ## 项目结构
 
@@ -42,8 +43,16 @@ AGV_sim/src/
 
 ### 环境要求
 
-- Ubuntu 22.04, ROS 2 Humble, Gazebo Fortress, Python 3.10+
+- Ubuntu 22.04 + ROS 2 Humble，或 Ubuntu 24.04 + ROS 2 Jazzy
+- Gazebo Fortress, Python 3.10+
 - Python 包: flask, flask-cors, flask-socketio, pyyaml, numpy
+
+环境引导建议:
+
+- 优先使用当前 shell 已经 `source` 过的 ROS 环境
+- 或显式导出 `AGV_ROS_DISTRO=jazzy` / `AGV_ROS_DISTRO=humble`
+- 再通过 `scripts/common_env.sh` 自动补齐工作区 overlay
+- 每台机器都需要在本机执行一次 `colcon build --symlink-install`
 
 ### 一键启动 — 答辩演示 (推荐)
 
@@ -52,7 +61,7 @@ cd AGV_sim/src/scripts
 ./start_all.sh              # 打开 3 个 gnome-terminal 窗口
 ```
 
-自动启动 Gazebo + 控制器 (交互模式) + Web 驾驶舱。
+自动启动 Gazebo 默认主场景 + 控制器 (交互模式) + Web 驾驶舱。
 
 > 无桌面环境时使用 tmux 版: `./start_all_tmux.sh`
 >
@@ -63,12 +72,15 @@ cd AGV_sim/src/scripts
 ```bash
 # 1. 构建
 cd AGV_sim/src
-source /opt/ros/humble/setup.bash
+source scripts/common_env.sh
 colcon build --symlink-install
-source install/setup.bash
+source scripts/common_env.sh
 
-# 2. 启动 Gazebo
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
+# 2. 启动 Gazebo 默认主场景
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
+
+# legacy 兼容入口仍保留，但不再是默认主场景:
+# ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 
 # 3. 启动控制器 (新终端)
 python3 agv_manual_controller.py
@@ -85,7 +97,7 @@ python3 app.py
 
 ## 驾驶舱功能
 
-- **港口平面孪生图** — AGV 实时位置、轨迹、风险热力图
+- **400m 极简实验港口平面图** — AGV 实时位置、轨迹、风险热力图
 - **AGV 实时状态** — 位置、航向、速度、当前模式
 - **风险评估** — 风险等级、风险分数、风险原因、实时告警
 - **任务状态** — 当前任务、进度、预设路线一键执行
@@ -122,4 +134,5 @@ python3 app.py
 - [API 文档](docs/api.md) — 接口详细说明
 - [演示说明](docs/demo.md) — 操作指南
 - [运行指南](docs/run_guide.md) — 分步启动
+- [400m 场景说明](docs/minimal_port_scene_400m.md) — 默认主场景与 Zone A/B/C
 - [CLAUDE.md](CLAUDE.md) — AI 辅助开发指南

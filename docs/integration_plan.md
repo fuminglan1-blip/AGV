@@ -2,14 +2,14 @@
 
 ## Objective
 
-Create a minimal viable integration of port harbour models with the existing diff_drive AGV simulation, maintaining full functionality of the web dashboard.
+Create a minimal viable harbour integration around the `agv_ackermann` vehicle, keeping the web dashboard and ROS2 control chain stable on `/agv/*` topics.
 
 ## Scope
 
 ### In Scope (Phase 1)
 - ✅ Integrate 2-3 static harbour models into Gazebo scene
-- ✅ Maintain existing diff_drive AGV functionality
-- ✅ Keep /diff_drive/odometry topic unchanged
+- ✅ Maintain the `agv_ackermann` AGV runtime chain
+- ✅ Keep `/agv/odometry` and `/agv/cmd_vel` stable
 - ✅ Ensure web dashboard continues to work
 - ✅ Reorganize directory structure
 - ✅ Fix hardcoded paths
@@ -47,7 +47,8 @@ Create new ROS2 package: `harbour_assets_description`
 
 ### 3. Scene Creation
 Create `harbour_diff_drive.sdf`:
-- Include existing diff_drive robot
+- Keep the historical filename, but treat `agv_ackermann` as the only active vehicle
+- Include the `agv_ackermann` primary vehicle
 - Add 3 harbour models with appropriate poses
 - Maintain simple ground plane
 - Keep existing lighting
@@ -55,10 +56,11 @@ Create `harbour_diff_drive.sdf`:
 
 ### 4. Launch Configuration
 Create `harbour_diff_drive.launch.py`:
+- Keep the historical launch filename, but preserve `agv_ackermann + /agv/*` as runtime truth
 - Launch new harbour scene
-- Reuse existing ros_gz_bridge configuration
-- Maintain all existing topic mappings
-- No changes to /diff_drive/odometry
+- Reuse the existing `agv_ackermann` ros_gz_bridge configuration
+- Maintain all `/agv/*` topic mappings
+- No changes to `/agv/odometry`
 
 ### 5. Web Dashboard
 - Verify static assets load correctly
@@ -69,9 +71,9 @@ Create `harbour_diff_drive.launch.py`:
 ## Constraints
 
 ### Must Not
-- ❌ Modify ros_gz_project_template internals
-- ❌ Change /diff_drive/odometry topic name
-- ❌ Replace diff_drive with complex vehicle
+- ❌ Broadly modify ros_gz_project_template internals outside the active harbour/AGV chain
+- ❌ Change `/agv/odometry` or `/agv/cmd_vel` without updating all consumers
+- ❌ Replace `agv_ackermann` with a different primary vehicle
 - ❌ Add external network dependencies
 - ❌ Implement features beyond Phase 1 scope
 
@@ -88,8 +90,8 @@ Create `harbour_diff_drive.launch.py`:
 - [ ] `source install/setup.bash` works
 - [ ] `ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py` starts
 - [ ] Gazebo shows harbour models and AGV
-- [ ] `/diff_drive/odometry` publishes at expected rate
-- [ ] `ros2 topic echo /diff_drive/odometry --once` returns data
+- [ ] `/agv/odometry` publishes at expected rate
+- [ ] `ros2 topic echo /agv/odometry --once` returns data
 - [ ] Web dashboard starts without errors
 - [ ] Browser connects to `http://localhost:5000`
 - [ ] Socket.IO connection established

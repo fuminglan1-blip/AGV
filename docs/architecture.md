@@ -38,7 +38,8 @@
        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Gazebo Fortress 仿真                                       │
-│  ├── 世界: harbour_diff_drive.sdf (港口场景)                  │
+│  ├── 默认世界: simplified_port_agv_terrain_400m.sdf         │
+│  ├── legacy 世界: harbour_diff_drive.sdf (历史文件名)         │
 │  ├── 主车: agv_ackermann (Ackermann 转向, 3m 轴距)           │
 │  ├── ros_gz_bridge (ros_gz_agv_ackermann_bridge.yaml)        │
 │  └── 输出: /agv/odometry, /agv/joint_states, /tf             │
@@ -49,9 +50,11 @@
 
 ### 1. Gazebo 仿真层 (`ros_gz_project_template/`)
 
-- **harbour_diff_drive.sdf** — 港口场景 (起重机、集装箱、agv_ackermann)
+- **simplified_port_agv_terrain_400m.sdf** — 当前默认 400m 极简实验港口主场景
+- **harbour_diff_drive.sdf** — legacy 港口场景历史文件名 (兼容保留)
 - **agv_ackermann/model.sdf** — Ackermann 转向港口卡车 (10吨, 3m 轴距)
-- **harbour_diff_drive.launch.py** — 启动 Gazebo + ros_gz_bridge + RViz
+- **simplified_port_agv_terrain_400m.launch.py** — 当前默认 Gazebo 启动入口
+- **harbour_diff_drive.launch.py** — 历史 launch 入口名，兼容保留
 - **ros_gz_agv_ackermann_bridge.yaml** — Gazebo ↔ ROS2 话题桥接
 
 ### 2. 港口资产 (`harbour_assets_description/`)
@@ -73,7 +76,8 @@
 
 开发期合成风险评估:
 
-- `risk_layer.py` — 200×200 静态风险网格 (起重机区、集装箱区、港口边缘热点)
+- `risk_layer.py` — 与 400m 主场景对齐的 synthetic compatibility 风险网格
+- `deformation_zones.yaml` — Zone A / Zone B / Zone C 的共享参数源
 - `risk_fusion.py` — 地面风险 + 梯度幅值 → `risk_score` (0-1) + `risk_state` (safe/warn/danger)
 - 阈值可通过 `config.yaml` 的 `risk_thresholds` 配置
 

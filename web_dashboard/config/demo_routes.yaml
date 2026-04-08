@@ -3,8 +3,8 @@
 # Each route is a list of [x, y] waypoints in Gazebo coordinates.
 # The mission controller drives to each waypoint in sequence.
 #
-# agv_ackermann spawns at (5, 3) in harbour_diff_drive.sdf.
-# Coordinates stay within the harbour scene (roughly -20..40, -15..20).
+# agv_ackermann spawns at (20, 12) in simplified_port_agv_terrain_400m.sdf.
+# Coordinates stay within the 400 m experiment scene's test corridors.
 #
 # Waypoint tracking parameters (used by agv_mission_controller):
 waypoint_tracking:
@@ -17,37 +17,43 @@ waypoint_tracking:
 demo_routes:
   # Standard port operation: straight run along the quay
   standard_operation:
-    description: "Straight run along the quay and back"
+    description: "Main-corridor run with loop return in the 400m experiment scene"
     waypoints:
-      - [5.0, 3.0]
-      - [10.0, 3.0]
-      - [15.0, 3.0]
-      - [20.0, 3.0]
-      - [20.0, 6.0]
-      - [10.0, 6.0]
-      - [5.0, 3.0]
+      - [20.0, 12.0]
+      - [0.0, 10.0]
+      - [60.0, 10.0]
+      - [120.0, 10.0]
+      - [120.0, -40.0]
+      - [20.0, -40.0]
+      - [-60.0, -40.0]
+      - [-20.0, 10.0]
+      - [20.0, 12.0]
 
   # Deformation test: weaving path to test steering response
   deformation_test:
-    description: "Weaving path testing steering dynamics"
+    description: "Zone A/B/C repeated pass route for localization and terrain tests"
     waypoints:
-      - [5.0, 3.0]
-      - [8.0, 6.0]
-      - [12.0, 1.0]
-      - [16.0, 6.0]
-      - [20.0, 3.0]
-      - [16.0, 3.0]
-      - [5.0, 3.0]
+      - [20.0, 12.0]
+      - [-40.0, 10.0]
+      - [-20.0, 10.0]
+      - [35.0, 10.0]
+      - [80.0, 10.0]
+      - [120.0, 10.0]
+      - [120.0, -40.0]
+      - [20.0, -40.0]
+      - [0.0, -40.0]
+      - [20.0, 12.0]
 
   # Avoidance demo: route around obstacles
   avoidance_demo:
-    description: "Route around harbour obstacles"
+    description: "Closed-loop route around crane and container landmarks"
     waypoints:
-      - [5.0, 3.0]
-      - [10.0, 0.0]
-      - [15.0, -2.0]
-      - [20.0, 0.0]
-      - [20.0, 5.0]
-      - [15.0, 7.0]
-      - [10.0, 5.0]
-      - [5.0, 3.0]
+      - [20.0, 12.0]
+      - [80.0, 10.0]
+      - [120.0, 10.0]
+      - [120.0, -40.0]
+      - [40.0, -40.0]
+      - [-40.0, -40.0]
+      - [-80.0, -20.0]
+      - [-60.0, 10.0]
+      - [20.0, 12.0]

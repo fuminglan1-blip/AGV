@@ -19,6 +19,7 @@ Supported commands (keyboard key → command string):
     a → steer_left     d → steer_right
     SPACE → stop       r → center_steer
     q → reset_all
+    emergency_stop     — immediate zero Twist, bypassing the normal ramp-down
 
 Mission-specific commands (from agv_mission_controller):
     set_speed:<value>       — set target speed directly (m/s)
@@ -101,6 +102,7 @@ class AGVManualController(Node):
         self.target_steer  = 0.0
         self.current_speed = 0.0
         self.current_steer = 0.0
+        self.force_zero_publish = False
 
         # Publisher: /agv/cmd_vel
         topic = cfg.get('cmd_vel_topic', '/agv/cmd_vel')
@@ -148,6 +150,8 @@ class AGVManualController(Node):
         elif cmd == 'reset_all':
             self.target_speed = 0.0
             self.target_steer = 0.0
+        elif cmd == 'emergency_stop':
+            self._emergency_stop()
         elif cmd.startswith('set_speed:'):
             try:
                 v = float(cmd.split(':', 1)[1])
@@ -172,6 +176,14 @@ class AGVManualController(Node):
     # ── Fixed-rate publish with rate limiting ─────────────────────
 
     def _publish(self):
+        if self.force_zero_publish:
+            # Emergency-stop requests bypass the normal ramp-down so the
+            # controller remains the sole /agv/cmd_vel publisher while still
+            # producing an immediate zero Twist.
+            self.force_zero_publish = False
+            self.pub.publish(Twist())
+            return
+
         self.current_speed = self._approach(
             self.current_speed, self.target_speed,
             self.max_accel * self.dt)
@@ -207,9 +219,13 @@ class AGVManualController(Node):
 
     # ── Emergency stop ────────────────────────────────────────────
 
-    def stop(self):
+    def _emergency_stop(self):
         self.target_speed = self.target_steer = 0.0
         self.current_speed = self.current_steer = 0.0
+        self.force_zero_publish = True
+
+    def stop(self):
+        self._emergency_stop()
         try:
             self.pub.publish(Twist())
         except Exception:
@@ -268,10 +284,15 @@ def main():
             rclpy.spin(ctrl)
         except KeyboardInterrupt:
             pass
+        except Exception as e:
+            print(f'[agv_manual_controller] Headless loop stopped: {e}')
         finally:
             ctrl.stop()
             ctrl.destroy_node()
-            rclpy.shutdown()
+            try:
+                rclpy.shutdown()
+            except Exception:
+                pass
         return
 
     settings = termios.tcgetattr(sys.stdin)
@@ -301,7 +322,10 @@ def main():
         ctrl.stop()
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
         ctrl.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
         print('\n\nStopped.')
 
 

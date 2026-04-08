@@ -3,5 +3,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Keep local ROS2/colcon build outputs out of version control.
+build/
+install/
+log/
+
 # Ignore nested Mercurial metadata from third-party model snapshots.
 .hg/

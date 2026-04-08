@@ -1,74 +1,134 @@
 #!/usr/bin/env python3
 """
-risk_layer.py - Minimum Risk Layer for Port AGV Digital Twin
+risk_layer.py - Synthetic compatibility risk layer for the 400 m main scene.
 
-Provides a static synthetic risk grid for the development period.
-Simulates ground deformation / subsidence risk in a port environment.
+This module keeps the Phase-1 rule-based risk pipeline intact while aligning
+the synthetic grid with the default 400 m experiment scene:
 
-In production, this module would:
-  - Load a real GeoTIFF via rasterio
-  - Apply coordinate transforms (UTM <-> sim frame)
-  - Support dynamic updates as new InSAR data arrives
+  simplified_port_agv_terrain_400m
 
-For development: uses a numpy-based grid with synthetic hotspots
-calibrated to the harbour_diff_drive simulation layout.
-
-Grid parameters:
-  - Coverage: -100m to +100m in x and y (simulation frame)
-  - Resolution: 1.0 m per cell  (200 x 200 grid)
-  - Origin: sim frame (0, 0) = harbour centre
-
-Risk hotspot layout (matching harbour_diff_drive.sdf poses):
-  - Near crane   (-15,  8) : settlement risk under heavy equipment
-  - Near container stack (-5, -15) : loading-induced stress
-  - Harbour-edge zone   (20,  20) : peripheral subsidence
-  - Pier zone           ( 0, -40) : waterfront deformation
+The heatmap is still synthetic, but it now reads the shared scene profile and
+deformation zone parameters so the Gazebo world, backend APIs, and dashboard
+all describe the same 400 m layout.
 """
 
+from __future__ import annotations
+
 import math
+import os
+
 import numpy as np
+import yaml
 
-# ---------------------------------------------------------------------------
-# Grid configuration
-# ---------------------------------------------------------------------------
-GRID_MIN_M = -100.0   # metres (sim frame)
-GRID_MAX_M =  100.0
-GRID_RES_M =   1.0    # metres per cell
-GRID_CELLS = int((GRID_MAX_M - GRID_MIN_M) / GRID_RES_M)  # 200
 
-_risk_grid: np.ndarray | None = None   # lazy-initialised
+_MODULE_DIR = os.path.dirname(__file__)
+_CFG_PATH = os.path.join(_MODULE_DIR, 'config.yaml')
+_DEFAULT_ZONES_PATH = os.path.normpath(os.path.join(
+    _MODULE_DIR,
+    '..',
+    'ros_gz_project_template',
+    'ros_gz_example_bringup',
+    'config',
+    'deformation_zones.yaml',
+))
+
+
+def _load_yaml(path: str) -> dict:
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = yaml.safe_load(handle) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_scene_cfg() -> tuple[dict, dict, str]:
+    cfg = _load_yaml(_CFG_PATH)
+    scene_cfg = cfg.get('scene', {}) if isinstance(cfg.get('scene'), dict) else {}
+
+    zones_path = os.environ.get('AGV_DEFORMATION_ZONES_FILE')
+    if not zones_path:
+        zones_path = scene_cfg.get('deformation_zones_file', _DEFAULT_ZONES_PATH)
+    if not os.path.isabs(zones_path):
+        zones_path = os.path.normpath(os.path.join(_MODULE_DIR, zones_path))
+
+    return cfg, scene_cfg, zones_path
+
+
+_CFG, _SCENE_CFG, _ZONES_PATH = _resolve_scene_cfg()
+_ZONES_CFG = _load_yaml(_ZONES_PATH)
+_BOUNDS_CFG = _SCENE_CFG.get('local_map_bounds', {})
+_SCENE_WORLD_SIZE = _SCENE_CFG.get('world_size_m', [400.0, 400.0])
+
+SCENE_PROFILE = _SCENE_CFG.get('profile', 'simplified_port_agv_terrain_400m')
+RISK_LAYER_MODE = _SCENE_CFG.get('risk_layer_mode', 'synthetic_compat_deformation_yaml')
+GRID_MIN_M = float(min(_BOUNDS_CFG.get('min_x', -200.0), _BOUNDS_CFG.get('min_y', -200.0)))
+GRID_MAX_M = float(max(_BOUNDS_CFG.get('max_x', 200.0), _BOUNDS_CFG.get('max_y', 200.0)))
+GRID_RES_M = float(_CFG.get('heatmap', {}).get('grid_resolution_m', 1.0))
+GRID_CELLS = int(round((GRID_MAX_M - GRID_MIN_M) / GRID_RES_M)) + 1
+
+_risk_grid: np.ndarray | None = None
+
+
+def _rectangle_mask(xx: np.ndarray, yy: np.ndarray, center_xy: list[float], size_m: list[float]) -> np.ndarray:
+    cx, cy = center_xy
+    sx, sy = size_m
+    return (np.abs(xx - cx) <= sx / 2.0) & (np.abs(yy - cy) <= sy / 2.0)
+
+
+def _landmark_gaussian(xx: np.ndarray, yy: np.ndarray, center_xy: tuple[float, float], sigma_m: float, amplitude: float) -> np.ndarray:
+    cx, cy = center_xy
+    rr = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    return amplitude * np.exp(-(rr ** 2) / (2.0 * sigma_m ** 2))
 
 
 def _build_grid() -> np.ndarray:
-    """Build synthetic risk grid once on first query."""
     xs = np.linspace(GRID_MIN_M, GRID_MAX_M, GRID_CELLS)
     ys = np.linspace(GRID_MIN_M, GRID_MAX_M, GRID_CELLS)
-    XX, YY = np.meshgrid(xs, ys)   # shape (GRID_CELLS, GRID_CELLS)
+    xx, yy = np.meshgrid(xs, ys)
 
-    # Base background risk
-    grid = np.full((GRID_CELLS, GRID_CELLS), 0.08, dtype=np.float32)
+    grid = np.full((GRID_CELLS, GRID_CELLS), 0.06, dtype=np.float32)
 
-    # Hotspot 1: port crane foundation settlement
-    r = np.sqrt((XX + 15)**2 + (YY - 8)**2)
-    grid += 0.55 * np.exp(-r**2 / (2 * 7.0**2))
+    zones_cfg = _ZONES_CFG.get('zones', {})
 
-    # Hotspot 2: container stack loading stress
-    r = np.sqrt((XX + 5)**2 + (YY + 15)**2)
-    grid += 0.45 * np.exp(-r**2 / (2 * 5.5**2))
+    zone_a = zones_cfg.get('zone_A', {})
+    if zone_a:
+        mask_a = _rectangle_mask(xx, yy, zone_a.get('center_xy', [-20.0, 10.0]), zone_a.get('size_m', [40.0, 14.0]))
+        grid[mask_a] = np.maximum(grid[mask_a], 0.26)
 
-    # Hotspot 3: harbour peripheral subsidence (top-right)
-    r = np.sqrt((XX - 20)**2 + (YY - 20)**2)
-    grid += 0.35 * np.exp(-r**2 / (2 * 10.0**2))
+    zone_b = zones_cfg.get('zone_B', {})
+    if zone_b:
+        center_b = zone_b.get('center_xy', [35.0, 10.0])
+        size_b = zone_b.get('size_m', [50.0, 14.0])
+        mask_b = _rectangle_mask(xx, yy, center_b, size_b)
+        left = center_b[0] - size_b[0] / 2.0
+        x_norm = np.clip((xx - left) / max(size_b[0], 1e-6), 0.0, 1.0)
+        gradient_band = 0.18 + 0.34 * x_norm
+        grid[mask_b] = np.maximum(grid[mask_b], gradient_band[mask_b])
 
-    # Hotspot 4: pier/waterfront deformation (bottom)
-    r = np.sqrt((XX)**2 + (YY + 40)**2)
-    grid += 0.40 * np.exp(-r**2 / (2 * 8.0**2))
+    zone_c = zones_cfg.get('zone_C', {})
+    if zone_c:
+        cx, cy = zone_c.get('center_xy', [0.0, -40.0])
+        radius = float(zone_c.get('radius_m', 2.0))
+        rr = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+        inner = rr <= radius
+        ring = 0.48 * np.exp(-(rr ** 2) / (2.0 * (radius * 1.8) ** 2))
+        grid = np.maximum(grid, ring.astype(np.float32))
+        grid[inner] = np.maximum(grid[inner], 0.72)
+
+    landmarks = _ZONES_CFG.get('landmarks', {})
+    crane_pose = landmarks.get('port_crane_pose_xyzrpy', [-60.0, 32.0, 0.0, 0.0, 0.0, 0.0])
+    single_pose = landmarks.get('container_single_pose_xyzrpy', [36.876, -44.364, 0.0, 0.0, 0.0, 1.57])
+    stack_pose = landmarks.get('container_stack_pose_xyzrpy', [-30.84, -76.44, 0.0, 0.0, 0.0, 0.0])
+
+    grid += _landmark_gaussian(xx, yy, (crane_pose[0], crane_pose[1]), sigma_m=10.0, amplitude=0.18)
+    grid += _landmark_gaussian(xx, yy, (single_pose[0], single_pose[1]), sigma_m=7.5, amplitude=0.14)
+    grid += _landmark_gaussian(xx, yy, (stack_pose[0], stack_pose[1]), sigma_m=8.5, amplitude=0.16)
 
     return np.clip(grid, 0.0, 1.0)
 
 
 def _get_grid() -> np.ndarray:
-    """Return cached grid, building it on first call."""
     global _risk_grid
     if _risk_grid is None:
         _risk_grid = _build_grid()
@@ -76,44 +136,20 @@ def _get_grid() -> np.ndarray:
 
 
 def _xy_to_idx(x: float, y: float) -> tuple[int, int]:
-    """Convert world coords (m) → (col, row) grid index, clamped to bounds."""
-    ix = int((x - GRID_MIN_M) / GRID_RES_M)
-    iy = int((y - GRID_MIN_M) / GRID_RES_M)
+    ix = int(round((x - GRID_MIN_M) / GRID_RES_M))
+    iy = int(round((y - GRID_MIN_M) / GRID_RES_M))
     ix = max(0, min(GRID_CELLS - 1, ix))
     iy = max(0, min(GRID_CELLS - 1, iy))
     return ix, iy
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def query(x: float, y: float) -> dict:
-    """
-    Query risk value and spatial gradient at position (x, y).
-
-    This is the terrain_query interface.  The Flask app calls this
-    inside the ROS2 odometry callback on every pose update.
-
-    Args:
-        x: x position in metres (simulation frame)
-        y: y position in metres (simulation frame)
-
-    Returns:
-        dict:
-            risk          (float 0-1) : risk value at this location
-            gradient_x    (float)     : dRisk/dx  (per metre)
-            gradient_y    (float)     : dRisk/dy  (per metre)
-            gradient_mag  (float)     : ||gradient||
-            in_bounds     (bool)      : whether position is within grid
-    """
     grid = _get_grid()
     in_bounds = (GRID_MIN_M <= x <= GRID_MAX_M) and (GRID_MIN_M <= y <= GRID_MAX_M)
 
     ix, iy = _xy_to_idx(x, y)
     risk = float(grid[iy, ix])
 
-    # Central-difference gradient
     ix_l = max(0, ix - 1)
     ix_r = min(GRID_CELLS - 1, ix + 1)
     iy_b = max(0, iy - 1)
@@ -121,34 +157,44 @@ def query(x: float, y: float) -> dict:
 
     grad_x = float(grid[iy, ix_r] - grid[iy, ix_l]) / (2.0 * GRID_RES_M)
     grad_y = float(grid[iy_t, ix] - grid[iy_b, ix]) / (2.0 * GRID_RES_M)
-    grad_mag = math.sqrt(grad_x**2 + grad_y**2)
+    grad_mag = math.sqrt(grad_x ** 2 + grad_y ** 2)
 
     return {
-        'risk':         round(risk, 4),
-        'gradient_x':  round(grad_x, 6),
-        'gradient_y':  round(grad_y, 6),
+        'risk': round(risk, 4),
+        'gradient_x': round(grad_x, 6),
+        'gradient_y': round(grad_y, 6),
         'gradient_mag': round(grad_mag, 6),
-        'in_bounds':   in_bounds,
+        'in_bounds': in_bounds,
     }
 
 
 def get_heatmap_data(step: int = 4) -> list[dict]:
-    """
-    Export sampled grid as list of {x, y, risk} for Leaflet heatmap.
-
-    Args:
-        step: sample every N cells (reduces payload size)
-
-    Returns:
-        list of {x, y, risk} dicts (only cells with risk > 0.15)
-    """
     grid = _get_grid()
     result = []
     for iy in range(0, GRID_CELLS, step):
         for ix in range(0, GRID_CELLS, step):
             risk = float(grid[iy, ix])
-            if risk > 0.15:
+            if risk > 0.12:
                 x = GRID_MIN_M + ix * GRID_RES_M
                 y = GRID_MIN_M + iy * GRID_RES_M
-                result.append({'x': x, 'y': y, 'risk': round(risk, 3)})
+                result.append({'x': round(x, 3), 'y': round(y, 3), 'risk': round(risk, 3)})
     return result
+
+
+def get_scene_metadata() -> dict:
+    zones_cfg = _ZONES_CFG.get('zones', {})
+    return {
+        'profile': SCENE_PROFILE,
+        'mode': RISK_LAYER_MODE,
+        'grid_range': [GRID_MIN_M, GRID_MAX_M],
+        'grid_resolution_m': GRID_RES_M,
+        'world_size_m': _SCENE_WORLD_SIZE,
+        'deformation_zones_file': _ZONES_PATH,
+        'zones': {
+            'zone_A': zones_cfg.get('zone_A', {}),
+            'zone_B': zones_cfg.get('zone_B', {}),
+            'zone_C': zones_cfg.get('zone_C', {}),
+        },
+        'landmarks': _ZONES_CFG.get('landmarks', {}),
+        'corridors': _ZONES_CFG.get('corridors', {}),
+    }

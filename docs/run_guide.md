@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Ubuntu 22.04
-- ROS 2 Humble (`/opt/ros/humble/`)
+- ROS 2 Humble (`/opt/ros/humble/`) or ROS 2 Jazzy (`/opt/ros/jazzy/`)
 - Gazebo Fortress (Ignition Gazebo)
 - Python 3.10+ with: flask, flask-cors, flask-socketio, pyyaml
 
@@ -11,36 +11,42 @@
 
 ```bash
 cd ~/AGV_sim/src
-source /opt/ros/humble/setup.bash
+source scripts/common_env.sh
 colcon build --symlink-install
-source install/setup.bash
+source scripts/common_env.sh
 ```
 
-Expected: `Summary: 5 packages finished` (ros_gz_example_gazebo may fail due to missing gz-common5-profiler — this is a pre-existing issue that does not affect simulation).
+Expected: `Summary: 5 packages finished`.
+Note: each machine must build its own local `install/` overlay before launch.
 
 ## Launch (3 Terminals)
 
 ### Terminal 1 — Gazebo Simulation
 
 ```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
+source scripts/common_env.sh
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
 ```
 
-Wait for Gazebo GUI to open. You should see the harbour scene with crane, containers, and two vehicles (diff_drive at origin, agv_ackermann at (5,3)).
+Wait for Gazebo GUI to open. You should see the 400m simplified experiment scene with the crane, containers, and the `agv_ackermann` vehicle spawned near `(20, 12)`.
 
 To save resources (no RViz):
 ```bash
-ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py rviz:=false
+source scripts/common_env.sh
+ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py rviz:=false
+```
+
+Legacy compatibility entry remains available:
+```bash
+source scripts/common_env.sh
+ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py
 ```
 
 ### Terminal 2 — Manual Controller
 
 ```bash
 cd ~/AGV_sim/src
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+source scripts/common_env.sh
 python3 agv_manual_controller.py
 ```
 
@@ -53,8 +59,7 @@ python3 agv_manual_controller.py < /dev/null
 
 ```bash
 cd ~/AGV_sim/src/web_dashboard
-source /opt/ros/humble/setup.bash
-source install/setup.bash
+source ../scripts/common_env.sh
 python3 agv_mission_controller.py &
 python3 app.py
 ```
