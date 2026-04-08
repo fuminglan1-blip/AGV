@@ -20,14 +20,31 @@ echo "  港口 AGV 数字孪生 — 开发环境启动"
 echo "════════════════════════════════════════════"
 
 # ── 1. 检查 ROS2 环境 ──
-if [ -f /opt/ros/humble/setup.bash ]; then
-    source /opt/ros/humble/setup.bash
-    echo "✓ ROS2 Humble 已加载"
-else
-    echo "✗ 错误: 找不到 /opt/ros/humble/setup.bash"
-    echo "  请先安装 ROS2 Humble"
-    exit 1
-fi
+# Runtime detection keeps this script compatible with Ubuntu 24.04 / ROS2 Jazzy.
+resolve_ros_setup() {
+    local distro=""
+    if [ -n "${ROS_DISTRO:-}" ] && [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+        distro="${ROS_DISTRO}"
+    elif [ -f "/opt/ros/jazzy/setup.bash" ]; then
+        distro="jazzy"
+    else
+        distro="$(ls /opt/ros 2>/dev/null | head -n1 || true)"
+    fi
+
+    if [ -z "$distro" ] || [ ! -f "/opt/ros/${distro}/setup.bash" ]; then
+        echo ""
+        echo "✗ 错误: 找不到 ROS2 setup.bash（/opt/ros/<distro>/setup.bash）"
+        echo "  请先安装 ROS2（Ubuntu 24.04 推荐 Jazzy）"
+        return 1
+    fi
+
+    export ROS_DISTRO="$distro"
+    echo "/opt/ros/${distro}/setup.bash"
+}
+
+ROS_SETUP_FILE="$(resolve_ros_setup)"
+source "$ROS_SETUP_FILE"
+echo "✓ ROS2 ${ROS_DISTRO} 已加载"
 
 # ── 2. 查找 overlay (统一路径变量) ──
 OVERLAY_SETUP=""
@@ -88,7 +105,7 @@ OVERLAY_CMD=""
 if [ -n "$OVERLAY_SETUP" ]; then
     OVERLAY_CMD="source '$OVERLAY_SETUP'"
 fi
-ROS_SETUP="source /opt/ros/humble/setup.bash; ${OVERLAY_CMD}"
+ROS_SETUP="source '${ROS_SETUP_FILE}'; ${OVERLAY_CMD}"
 
 echo ""
 echo "模式: 完整仿真链路 (tmux)"

@@ -9,14 +9,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${1:-interactive}"
 
 if ! command -v gnome-terminal &>/dev/null; then
-  echo "Error: gnome-terminal not found. Use start_all_tmux.sh instead."
-  exit 1
+  echo "[start_all] gnome-terminal not found. Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
+fi
+
+# Some environments expose gnome-terminal but it fails at runtime (e.g. broken libs).
+if ! gnome-terminal --version >/dev/null 2>&1; then
+  echo "[start_all] gnome-terminal is not usable in this environment."
+  echo "[start_all] Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
 fi
 
 echo "[start_all] Launching full AGV simulation stack (controller mode: ${MODE})..."
 
 echo "[start_all] Opening Gazebo terminal..."
-gnome-terminal --title="AGV - Gazebo" -- bash -lc "${SCRIPT_DIR}/start_gazebo.sh; exec bash"
+if ! gnome-terminal --title="AGV - Gazebo" -- bash -lc "${SCRIPT_DIR}/start_gazebo.sh; exec bash"; then
+  echo "[start_all] Failed to open gnome-terminal. Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
+fi
 
 sleep 5
 

@@ -14,7 +14,26 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Source ROS2
-source /opt/ros/humble/setup.bash
+resolve_ros_setup() {
+  local distro=""
+  if [[ -n "${ROS_DISTRO:-}" ]] && [[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]]; then
+    distro="${ROS_DISTRO}"
+  elif [[ -f "/opt/ros/jazzy/setup.bash" ]]; then
+    distro="jazzy"
+  else
+    distro="$(ls /opt/ros 2>/dev/null | head -n1 || true)"
+  fi
+
+  if [[ -z "${distro}" ]] || [[ ! -f "/opt/ros/${distro}/setup.bash" ]]; then
+    echo -e "${RED}✗${NC} ROS2 setup.bash not found under /opt/ros"
+    return 1
+  fi
+
+  export ROS_DISTRO="${distro}"
+  echo "/opt/ros/${distro}/setup.bash"
+}
+
+source "$(resolve_ros_setup)"
 source install/setup.bash
 
 echo "1. Checking ROS2 packages..."

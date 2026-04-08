@@ -43,7 +43,26 @@ fi
 
 echo ""
 echo "3. Checking ROS2 topics..."
-source /opt/ros/humble/setup.bash
+resolve_ros_setup() {
+  local distro=""
+  if [[ -n "${ROS_DISTRO:-}" ]] && [[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]]; then
+    distro="${ROS_DISTRO}"
+  elif [[ -f "/opt/ros/jazzy/setup.bash" ]]; then
+    distro="jazzy"
+  else
+    distro="$(ls /opt/ros 2>/dev/null | head -n1 || true)"
+  fi
+
+  if [[ -z "${distro}" ]] || [[ ! -f "/opt/ros/${distro}/setup.bash" ]]; then
+    echo -e "${RED}✗${NC} ROS2 setup.bash not found under /opt/ros"
+    return 1
+  fi
+
+  export ROS_DISTRO="${distro}"
+  echo "/opt/ros/${distro}/setup.bash"
+}
+
+source "$(resolve_ros_setup)"
 source install/setup.bash
 
 if ros2 topic list | grep -q "/diff_drive/odometry"; then
