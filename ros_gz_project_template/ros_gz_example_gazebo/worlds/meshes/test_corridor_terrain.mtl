@@ -1,0 +1,5 @@
+newmtl terrain_surface
+Ka 0.50 0.50 0.50
+Kd 0.60 0.60 0.60
+Ks 0.40 0.40 0.40
+d 1.0

@@ -8,8 +8,8 @@ Development-period data flow:
       → risk_layer.query(x, y)      [terrain_query]
       → risk_fusion.fuse(...)        [rule-based risk assessment]
       → vehicle_state{}              [shared state]
-      → Socket.IO vehicle_pose       [real-time push to browser]
-      → REST endpoints               [poll-based browser requests]
+      → Socket.IO agv_state          [real-time push to browser]
+      → REST endpoints               [poll-based compatibility requests]
 
 Unified API layer (/api/*) added for MVP cockpit.
 Legacy endpoints preserved for backward compatibility.
@@ -405,13 +405,6 @@ class AGVPoseSubscriber(Node):
             vehicle_state['terrain_risk'] = rf['terrain_risk']
             vehicle_state['gradient_mag'] = rf['gradient_mag']
             trajectory_history.append({'x': x, 'y': y, 'timestamp': time.time()})
-
-        # Legacy WebSocket event (backward compat)
-        socketio.emit('vehicle_pose', {
-            'x': x, 'y': y, 'heading': heading, 'speed': speed,
-            'risk': rf['risk_score'], 'risk_state': rf['risk_state'],
-            'warning': rf['warning_reason'],
-        }, namespace='/')
 
         # Unified WebSocket events
         socketio.emit('agv_state', _build_agv_state_msg(), namespace='/')
@@ -857,16 +850,9 @@ def api_insar_risk_zones():
 
 @socketio.on('connect')
 def handle_connect():
-    print(f'[WS] client connected {datetime.now().isoformat()}')
-    # Send initial state on connect
-    with state_lock:
-        emit('vehicle_pose', {
-            'x': vehicle_state['x'], 'y': vehicle_state['y'],
-            'heading': vehicle_state['heading'], 'speed': vehicle_state['speed'],
-            'risk': vehicle_state['risk_score'],
-            'risk_state': vehicle_state['risk_state'],
-            'warning': vehicle_state['warning_reason'],
-        })
+    if SERVER_DEBUG:
+        print(f'[WS] client connected {datetime.now().isoformat()}')
+    # Send initial unified state on connect
     emit('agv_state', _build_agv_state_msg())
     emit('risk_state', _build_risk_state_msg())
     emit('system_status', _build_system_status_msg())
@@ -880,7 +866,8 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print(f'[WS] client disconnected {datetime.now().isoformat()}')
+    if SERVER_DEBUG:
+        print(f'[WS] client disconnected {datetime.now().isoformat()}')
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -917,7 +904,7 @@ if __name__ == '__main__':
     print()
     print('  WebSocket 事件:')
     print('    agv_state, risk_state, alert_event,')
-    print('    system_status, mission_status, vehicle_pose(legacy)')
+    print('    system_status, mission_status')
     print()
     print(f'  数据管道: {ROS2_TOPIC} → terrain_query → risk_fusion → WS push')
     print(f'  风险层模式: {SCENE_CONTEXT["risk_layer_mode"]}')

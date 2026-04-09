@@ -10,6 +10,15 @@
   <author>Dharini Dutia</author>
 
   <depend>joint_state_publisher_gui</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>rviz2</depend>
+  <depend>ros_gz_bridge</depend>
 
   <depend>ros_gz</depend>
   <depend>sdformat_urdf</depend>
@@ -24,4 +33,3 @@
     <build_type>ament_cmake</build_type>
   </export>
 </package>
-

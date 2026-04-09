@@ -20,7 +20,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
-from launch.actions import IncludeLaunchDescription, ExecuteProcess
+from launch.actions import IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -91,6 +91,7 @@ def generate_launch_description():
         output='both',
         parameters=[
             {'use_sim_time': True},
+            {'frame_prefix': 'agv_ackermann/'},
             {'robot_description': agv_robot_desc},
         ],
         remappings=[
@@ -98,18 +99,10 @@ def generate_launch_description():
         ]
     )
 
-    workspace_src = os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.dirname(pkg_project_bringup))))
-    odom_tf_script = os.path.join(workspace_src, 'web_dashboard', 'odom_tf_publisher.py')
-    odom_vis_script = os.path.join(workspace_src, 'web_dashboard', 'odom_visual_helper.py')
-
-    odom_tf_publisher = ExecuteProcess(
-        cmd=['python3', odom_tf_script],
-        output='screen',
-    )
-
-    odom_visual_helper = ExecuteProcess(
-        cmd=['python3', odom_vis_script],
+    odom_tf_publisher = Node(
+        package='ros_gz_example_bringup',
+        executable='odom_tf_publisher.py',
+        name='odom_tf_publisher',
         output='screen',
     )
 
@@ -131,11 +124,21 @@ def generate_launch_description():
             'rviz',
             default_value='true',
             description='Open RViz.'),
+        DeclareLaunchArgument(
+            'odom_visual_helper',
+            default_value='true',
+            description='Enable default odom path helper for RViz trajectory display.'),
 
         gz_sim,
         agv_bridge,
         agv_robot_state_publisher,
         odom_tf_publisher,
-        odom_visual_helper,
+        Node(
+            package='ros_gz_example_bringup',
+            executable='odom_visual_helper.py',
+            name='odom_visual_helper',
+            output='screen',
+            condition=IfCondition(LaunchConfiguration('odom_visual_helper')),
+        ),
         rviz,
     ])

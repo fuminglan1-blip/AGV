@@ -84,7 +84,7 @@ echo ""
 # ── Window 0: Gazebo ──
 tmux new-session -d -s "$SESSION" -n "gazebo"
 tmux send-keys -t "$SESSION:gazebo" \
-    "${ROS_SETUP}; echo '[Gazebo] 启动仿真...'; echo '  默认主场景: simplified_port_agv_terrain_400m'; echo '  legacy 兼容入口: harbour_diff_drive.launch.py'; echo '  当前主车/主链: agv_ackermann + /agv/*'; ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py" Enter
+    "${ROS_SETUP}; cd '$SCRIPT_DIR'; echo '[Gazebo] 启动仿真...'; echo '  默认主场景: simplified_port_agv_terrain_400m'; echo '  legacy 兼容入口: harbour_diff_drive.launch.py'; echo '  当前主车/主链: agv_ackermann + /agv/*'; ./start_gazebo.sh" Enter
 
 sleep 2
 

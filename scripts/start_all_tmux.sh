@@ -34,6 +34,8 @@ tmux kill-session -t "${SESSION}" 2>/dev/null || true
 
 echo "[start_all_tmux] Creating tmux session '${SESSION}' (controller mode: ${MODE})..."
 echo "[start_all_tmux] Default Gazebo scene: simplified_port_agv_terrain_400m"
+echo "[start_all_tmux] Cleaning up stale local processes before launch..."
+./stop_all.sh
 
 # Create session with first window: Gazebo
 tmux new-session -d -s "${SESSION}" -n "gazebo" "cd ${SCRIPT_DIR_Q} && ./start_gazebo.sh; exec bash"

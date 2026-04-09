@@ -7,8 +7,6 @@ A template project integrating ROS 2 and Gazebo simulator.
 
 * `ros_gz_example_gazebo` - holds gazebo specific code and configurations. Namely this is where systems end up.
 
-* `ros_gz_example_application` - holds ros2 specific code and configurations.
-
 * `ros_gz_example_bringup` - holds launch files and high level utilities.
 
 
@@ -71,7 +69,7 @@ Or start by creating a workspace and cloning the template repository:
 1. Launch the simulation
 
     ```bash
-    ros2 launch ros_gz_example_bringup diff_drive.launch.py
+    ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py
     ```
 
 For a more detailed guide on using this template see [documentation](https://gazebosim.org/docs/latest/ros_gz_project_template_guide).

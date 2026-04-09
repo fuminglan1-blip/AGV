@@ -25,6 +25,8 @@ fi
 
 echo "[start_all] Launching full AGV simulation stack (controller mode: ${MODE})..."
 echo "[start_all] Default Gazebo scene: simplified_port_agv_terrain_400m"
+echo "[start_all] Cleaning up stale local processes before launch..."
+./stop_all.sh
 
 echo "[start_all] Opening Gazebo terminal..."
 gnome-terminal --title="AGV - Gazebo" -- bash -lc "cd ${SCRIPT_DIR_Q} && ./start_gazebo.sh; exec bash"

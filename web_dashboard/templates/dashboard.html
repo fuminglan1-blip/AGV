@@ -486,13 +486,35 @@ function _drawSimpleBackground() {
     const landmarks = [
         { name: 'AGV Spawn', pose: landmarksCfg.agv_spawn_pose_xyzrpy || [20, 12, 0.58, 0, 0, 0], color: '#22c55e' },
         { name: 'Port Crane', pose: landmarksCfg.port_crane_pose_xyzrpy || [-60, 32, 0, 0, 0, 0], color: '#60a5fa' },
-        { name: 'Container Single', pose: landmarksCfg.container_single_pose_xyzrpy || [36.876, -44.364, 0, 0, 0, 1.57], color: '#f59e0b' },
         { name: 'Container Stack', pose: landmarksCfg.container_stack_pose_xyzrpy || [-30.84, -76.44, 0, 0, 0, 0], color: '#f59e0b' },
     ];
     landmarks.forEach(item => {
         L.circleMarker([item.pose[1], item.pose[0]], {
             radius: 4, color: item.color, fillColor: item.color, fillOpacity: .8, weight: 1
         }).addTo(sceneOverlayLayer).bindTooltip(item.name, {permanent:false});
+    });
+
+    const yardBlocks = Array.isArray(landmarksCfg.yard_blocks) ? landmarksCfg.yard_blocks : [];
+    yardBlocks.forEach(block => {
+        const bx = block.x ?? 0;
+        const upperY = block.upper_y ?? -8;
+        const lowerY = block.lower_y ?? -22;
+        [
+            { y: upperY, label: `${block.name} 上排` },
+            { y: lowerY, label: `${block.name} 下排` },
+        ].forEach(item => {
+            L.circleMarker([item.y, bx], {
+                radius: 3, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: .85, weight: 1
+            }).addTo(sceneOverlayLayer).bindTooltip(item.label, {permanent:false});
+        });
+    });
+
+    const stackCoreInstances = Array.isArray(landmarksCfg.stack_core_instances) ? landmarksCfg.stack_core_instances : [];
+    stackCoreInstances.forEach(stack => {
+        const pose = stack.pose_xyzrpy || [0, 0, 0, 0, 0, 0];
+        L.circleMarker([pose[1], pose[0]], {
+            radius: 5, color: '#fb923c', fillColor: '#fb923c', fillOpacity: .85, weight: 1
+        }).addTo(sceneOverlayLayer).bindTooltip(`${stack.name} 高堆区`, {permanent:false});
     });
 
     for (let v = -200; v <= 200; v += 20) {
@@ -556,7 +578,6 @@ function connectSocketIO(){
     socket.on('connect',()=>{wsConnected=true;updateWsStatus('connected');addLog('info','WebSocket 已连接')});
     socket.on('disconnect',()=>{wsConnected=false;updateWsStatus('disconnected');addLog('warn','WebSocket 连接已断开')});
     socket.on('connect_error',()=>{wsConnected=false;updateWsStatus('disconnected')});
-    socket.on('vehicle_pose',(d)=>{updateAGVOnMap(d.x,d.y,d.heading);if(d.speed!==undefined)document.getElementById('speed').textContent=d.speed.toFixed(3)});
     socket.on('agv_state',(d)=>{updateAGVState(d)});
     socket.on('risk_state',(d)=>{updateRiskState(d)});
     socket.on('system_status',(d)=>{updateSystemStatus(d)});
@@ -584,12 +605,16 @@ function updateAGVOnMap(x,y,heading){
 }
 
 function updateAGVState(d){
-    if(d.position){document.getElementById('posX').textContent=d.position.x.toFixed(2);document.getElementById('posY').textContent=d.position.y.toFixed(2)}
+    if(d.position){
+        document.getElementById('posX').textContent=d.position.x.toFixed(2);
+        document.getElementById('posY').textContent=d.position.y.toFixed(2);
+    }
     if(d.orientation)document.getElementById('heading').textContent=d.orientation.yaw.toFixed(1);
     if(d.speed!==undefined)document.getElementById('speed').textContent=d.speed.toFixed(3);
     if(d.mode){const el=document.getElementById('modeLabel');el.textContent=MODE_CN[d.mode]||d.mode;el.className='badge '+(MODE_BADGE[d.mode]||'badge-idle')}
     if(d.source){document.getElementById('dataSource').textContent=d.source==='ros2'?'ROS2 实时':'模拟 (Mock)'}
     if(d.source==='ros2'){document.getElementById('simOdom').textContent='在线';document.getElementById('simOdom').className='badge badge-online'}
+    if(d.position&&d.orientation){updateAGVOnMap(d.position.x,d.position.y,d.orientation.yaw)}
 }
 
 function updateRiskState(d){
@@ -655,7 +680,14 @@ document.getElementById('btnCloseLog').addEventListener('click',()=>{document.ge
 // ═══════════════════════════════════════════════════════════════
 // REST 轮询
 // ═══════════════════════════════════════════════════════════════
-async function fetchVehicleState(){try{const r=await fetch('/vehicle_state');const d=await r.json();if(d.speed!==undefined)document.getElementById('speed').textContent=d.speed.toFixed(3)}catch(e){}}
+async function fetchVehicleState(){
+    if(wsConnected)return;
+    try{
+        const r=await fetch('/api/agv/latest');
+        const d=await r.json();
+        updateAGVState(d);
+    }catch(e){}
+}
 async function fetchTrajectory(){try{const r=await fetch('/trajectory');const d=await r.json();if(Array.isArray(d)){trajectoryPoints=d.map(p=>simToLatLng(p.x,p.y));trajectoryPolyline.setLatLngs(trajectoryPoints)}}catch(e){}}
 async function fetchHeatmap(){
     try{
@@ -677,7 +709,14 @@ async function loadRoutes(){
         }
     }catch(e){}
 }
-async function pollMissionStatus(){try{const r=await fetch('/mission/status');const d=await r.json();updateMissionStatus(d)}catch(e){}}
+async function pollMissionStatus(){
+    if(wsConnected)return;
+    try{
+        const r=await fetch('/api/mission/status');
+        const d=await r.json();
+        updateMissionStatus(d);
+    }catch(e){}
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 控制

@@ -118,11 +118,28 @@ def _build_grid() -> np.ndarray:
 
     landmarks = _ZONES_CFG.get('landmarks', {})
     crane_pose = landmarks.get('port_crane_pose_xyzrpy', [-60.0, 32.0, 0.0, 0.0, 0.0, 0.0])
-    single_pose = landmarks.get('container_single_pose_xyzrpy', [36.876, -44.364, 0.0, 0.0, 0.0, 1.57])
     stack_pose = landmarks.get('container_stack_pose_xyzrpy', [-30.84, -76.44, 0.0, 0.0, 0.0, 0.0])
+    stack_core_instances = landmarks.get('stack_core_instances', [])
+    yard_blocks = landmarks.get('yard_blocks', [])
 
     grid += _landmark_gaussian(xx, yy, (crane_pose[0], crane_pose[1]), sigma_m=10.0, amplitude=0.18)
-    grid += _landmark_gaussian(xx, yy, (single_pose[0], single_pose[1]), sigma_m=7.5, amplitude=0.14)
+    if isinstance(yard_blocks, list) and yard_blocks:
+        for block in yard_blocks:
+            if not isinstance(block, dict):
+                continue
+            bx = float(block.get('x', 0.0))
+            upper_y = float(block.get('upper_y', -8.0))
+            lower_y = float(block.get('lower_y', -22.0))
+            grid += _landmark_gaussian(xx, yy, (bx, upper_y), sigma_m=6.5, amplitude=0.10)
+            grid += _landmark_gaussian(xx, yy, (bx, lower_y), sigma_m=6.5, amplitude=0.10)
+    if isinstance(stack_core_instances, list) and stack_core_instances:
+        for stack in stack_core_instances:
+            if not isinstance(stack, dict):
+                continue
+            pose = stack.get('pose_xyzrpy', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            if len(pose) < 2:
+                continue
+            grid += _landmark_gaussian(xx, yy, (float(pose[0]), float(pose[1])), sigma_m=7.5, amplitude=0.14)
     grid += _landmark_gaussian(xx, yy, (stack_pose[0], stack_pose[1]), sigma_m=8.5, amplitude=0.16)
 
     return np.clip(grid, 0.0, 1.0)

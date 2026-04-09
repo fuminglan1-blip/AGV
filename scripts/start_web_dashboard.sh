@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WEB_DIR="${SRC_DIR}/web_dashboard"
 MISSION_PID=""
+APP_PID=""
 SERVER_HOST=""
 SERVER_PORT=""
 CLEANUP_DONE=0
@@ -77,7 +78,7 @@ cleanup() {
   echo "[start_web_dashboard] Shutting down..."
   if [[ -n "${MISSION_PID}" ]] && kill -0 "${MISSION_PID}" 2>/dev/null; then
     echo "[start_web_dashboard] Stopping agv_mission_controller (PID ${MISSION_PID})..."
-    kill -INT "${MISSION_PID}" 2>/dev/null || true
+    kill -TERM "${MISSION_PID}" 2>/dev/null || true
     for _ in 1 2 3 4 5; do
       if ! kill -0 "${MISSION_PID}" 2>/dev/null; then
         break
@@ -85,10 +86,30 @@ cleanup() {
       sleep 0.2
     done
     if kill -0 "${MISSION_PID}" 2>/dev/null; then
-      kill "${MISSION_PID}" 2>/dev/null || true
+      kill -9 "${MISSION_PID}" 2>/dev/null || true
     fi
     wait "${MISSION_PID}" 2>/dev/null || true
   fi
+  if [[ -n "${APP_PID}" ]] && kill -0 "${APP_PID}" 2>/dev/null; then
+    echo "[start_web_dashboard] Stopping Flask app (PID ${APP_PID})..."
+    kill -TERM "${APP_PID}" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      if ! kill -0 "${APP_PID}" 2>/dev/null; then
+        break
+      fi
+      sleep 0.2
+    done
+    if kill -0 "${APP_PID}" 2>/dev/null; then
+      kill -9 "${APP_PID}" 2>/dev/null || true
+    fi
+    wait "${APP_PID}" 2>/dev/null || true
+  fi
+  # A previous dashboard run may have left an untracked Flask / mission process
+  # behind. Sweep them as a final safeguard so browser state cannot flicker
+  # between stale and current backends.
+  agv_stop_processes "start_web_dashboard" \
+    'python3 app.py' \
+    'python3 agv_mission_controller.py'
   echo "[start_web_dashboard] Cleanup done."
 }
 
@@ -98,6 +119,13 @@ source "${SCRIPT_DIR}/common_env.sh"
 
 read_server_config
 echo "[start_web_dashboard] Using Flask endpoint ${SERVER_HOST}:${SERVER_PORT}"
+
+# Keep a single dashboard / mission pipeline alive so the frontend does not
+# flicker between stale and current AGV state snapshots.
+agv_stop_processes "start_web_dashboard" \
+  'python3 app.py' \
+  'python3 agv_mission_controller.py'
+
 check_server_port
 
 cd "${WEB_DIR}"
@@ -107,4 +135,6 @@ python3 agv_mission_controller.py &
 MISSION_PID=$!
 
 echo "[start_web_dashboard] Starting Flask app (app.py)..."
-python3 app.py
+python3 app.py &
+APP_PID=$!
+wait "${APP_PID}"

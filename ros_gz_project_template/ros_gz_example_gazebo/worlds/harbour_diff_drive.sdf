@@ -151,8 +151,7 @@
     </model>
 
     <!-- ══════════════════════════════════════════════════════════
-         diff_drive model REMOVED from this world.
-         Archived to archive_pending_review/diff_drive_legacy/.
+         diff_drive model removed from this legacy world.
          The agv_ackermann is now the sole vehicle.
          ══════════════════════════════════════════════════════════ -->
 

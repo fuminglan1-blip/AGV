@@ -20,6 +20,16 @@ install(
   DESTINATION share/${PROJECT_NAME}/config
 )
 
+# Install the RViz helper nodes with the bringup package so the default launch
+# chain runs entirely from the built overlay instead of mixing install/share
+# launch files with source-tree Python scripts.
+install(
+  PROGRAMS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../web_dashboard/odom_tf_publisher.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../web_dashboard/odom_visual_helper.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()

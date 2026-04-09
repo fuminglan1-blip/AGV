@@ -87,6 +87,15 @@ install(
   DESTINATION share/${PROJECT_NAME}/worlds
 )
 
+# Keep terrain mesh assets explicitly installed for symlink-install consumers
+# that load the world from install/share and resolve relative mesh URIs there.
+install(
+  FILES
+    worlds/meshes/test_corridor_terrain.obj
+    worlds/meshes/test_corridor_terrain.mtl
+  DESTINATION share/${PROJECT_NAME}/worlds/meshes
+)
+
 
 # Following directives are used when testing.
 if(BUILD_TESTING)

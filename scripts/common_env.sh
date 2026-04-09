@@ -96,3 +96,99 @@ fi
 
 AGV_COMMON_ENV_LOADED=1
 export AGV_COMMON_ENV_LOADED
+
+_agv_collect_pids_by_pattern() {
+  local pattern
+  local pids=()
+  for pattern in "$@"; do
+    while IFS= read -r pid; do
+      [[ -n "${pid}" ]] || continue
+      pids+=("${pid}")
+    done < <(pgrep -f -- "${pattern}" 2>/dev/null || true)
+  done
+
+  if [[ "${#pids[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  printf '%s\n' "${pids[@]}" | awk '!seen[$0]++'
+}
+
+_agv_current_process_tree_pids() {
+  local pid="$$"
+  local ppid=""
+  while [[ -n "${pid}" && "${pid}" != "0" && -r "/proc/${pid}/status" ]]; do
+    printf '%s\n' "${pid}"
+    ppid="$(awk '/^PPid:/ {print $2}' "/proc/${pid}/status" 2>/dev/null || true)"
+    if [[ -z "${ppid}" || "${ppid}" == "${pid}" ]]; then
+      break
+    fi
+    pid="${ppid}"
+  done
+}
+
+agv_stop_processes() {
+  if [[ "$#" -lt 2 ]]; then
+    echo "[common_env] Error: agv_stop_processes needs a label and at least one pattern." >&2
+    return 1
+  fi
+
+  local label="$1"
+  shift
+  local patterns=("$@")
+  local pids=()
+  local skip_pids=()
+  local pid
+
+  while IFS= read -r pid; do
+    [[ -n "${pid}" ]] || continue
+    skip_pids+=("${pid}")
+  done < <(_agv_current_process_tree_pids)
+
+  while IFS= read -r pid; do
+    [[ -n "${pid}" ]] || continue
+    if printf '%s\n' "${skip_pids[@]}" | grep -qx "${pid}"; then
+      continue
+    fi
+    pids+=("${pid}")
+  done < <(_agv_collect_pids_by_pattern "${patterns[@]}")
+
+  if [[ "${#pids[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "[${label}] Found stale processes from an earlier run:"
+  ps -fp "${pids[@]}" || true
+  echo "[${label}] Stopping stale processes before launch..."
+  kill "${pids[@]}" 2>/dev/null || true
+
+  local waited=0
+  local alive=0
+  while [[ "${waited}" -lt 10 ]]; do
+    alive=0
+    for pid in "${pids[@]}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        alive=1
+        break
+      fi
+    done
+    if [[ "${alive}" -eq 0 ]]; then
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  local stubborn=()
+  for pid in "${pids[@]}"; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      stubborn+=("${pid}")
+    fi
+  done
+
+  if [[ "${#stubborn[@]}" -gt 0 ]]; then
+    echo "[${label}] Forcing shutdown of stubborn processes: ${stubborn[*]}"
+    kill -9 "${stubborn[@]}" 2>/dev/null || true
+    sleep 1
+  fi
+}
