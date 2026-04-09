@@ -10,9 +10,8 @@ SRC_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 pkill -f "python3 app.py" 2>/dev/null
 sleep 1
 
-# Source ROS2 and workspace
-source /opt/ros/humble/setup.bash
-source "$SRC_DIR/install/setup.bash"
+# Source ROS2 + workspace via the shared compatibility bootstrap
+source "$SRC_DIR/scripts/common_env.sh"
 
 # Change to script directory and start Flask backend
 cd "$SCRIPT_DIR"
