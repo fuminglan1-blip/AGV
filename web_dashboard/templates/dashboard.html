@@ -3,152 +3,1277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>港口 AGV 数字孪生驾驶舱</title>
+    <title>港口数字孪生系统—无人集卡安全预警平台</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.css') }}" />
     <script src="{{ url_for('static', filename='js/leaflet.js') }}"></script>
     <script src="{{ url_for('static', filename='js/leaflet-heat.js') }}"></script>
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}?v=5"></script>
     <style>
         :root {
-            --bg: #080c14;
-            --bg-card: #111827;
-            --bg-alt: #0f172a;
-            --border: #1e293b;
-            --text: #e2e8f0;
-            --text2: #94a3b8;
-            --dim: #64748b;
-            --blue: #3b82f6;
-            --green: #22c55e;
-            --yellow: #eab308;
-            --red: #ef4444;
-            --orange: #f97316;
-            --cyan: #06b6d4;
-            --r: 5px;
-            --right-w: 330px;
+            --bg: #030814;
+            --bg-card: rgba(7, 18, 34, 0.82);
+            --bg-card-strong: rgba(7, 18, 34, 0.94);
+            --bg-alt: rgba(8, 25, 46, 0.92);
+            --border: rgba(87, 187, 255, 0.18);
+            --border-strong: rgba(105, 226, 255, 0.46);
+            --text: #e8f7ff;
+            --text2: #a2bdd8;
+            --dim: #6e87a6;
+            --blue: #4d88ff;
+            --green: #65f3b4;
+            --yellow: #ffd44f;
+            --red: #ff5f7f;
+            --orange: #ff9e4a;
+            --cyan: #5de8ff;
+            --cyan-soft: rgba(93, 232, 255, 0.16);
+            --shadow: 0 18px 40px rgba(0, 0, 0, 0.38);
+            --shadow-glow: 0 0 0 1px rgba(93, 232, 255, 0.1), 0 0 30px rgba(24, 125, 255, 0.18);
+            --r: 18px;
+            --top-h: 78px;
+            --footer-h: 32px;
         }
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:-apple-system,'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+        html,body{height:100%}
+        body{
+            font-family:-apple-system,'PingFang SC','Microsoft YaHei','Segoe UI',sans-serif;
+            color:var(--text);
+            overflow:hidden;
+            background:
+                radial-gradient(circle at 14% 14%, rgba(43, 196, 255, 0.18), transparent 24%),
+                radial-gradient(circle at 86% 12%, rgba(101, 243, 180, 0.11), transparent 22%),
+                radial-gradient(circle at 50% 100%, rgba(47, 112, 255, 0.14), transparent 30%),
+                linear-gradient(180deg, #040915 0%, #071221 46%, #020610 100%);
+        }
+        body::before,
+        body::after{
+            content:'';
+            position:fixed;
+            inset:0;
+            pointer-events:none;
+        }
+        body::before{
+            background-image:
+                linear-gradient(rgba(93,232,255,.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(93,232,255,.05) 1px, transparent 1px);
+            background-size: 60px 60px;
+            opacity:.3;
+            mask-image: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,.15));
+        }
+        body::after{
+            background:
+                radial-gradient(circle at center, transparent 0 76%, rgba(2,7,15,.04) 92%, rgba(2,7,15,.1) 100%);
+        }
 
         /* ═══ Main grid ═══ */
-        .ck{display:grid;height:100vh;
-            grid-template-rows:36px 1fr 320px 24px;
-            grid-template-columns:1fr var(--right-w);
-            grid-template-areas:"top top" "left right" "bot bot" "ft ft";
+        .ck{
+            position:relative;
+            display:grid;
+            height:100vh;
+            padding:12px;
+            gap:12px;
+            grid-template-rows:var(--top-h) minmax(0, 1fr) 316px var(--footer-h);
+            grid-template-columns:290px minmax(0, 1fr) 332px;
+            grid-template-areas:
+                "top top top"
+                "side-left center side-right"
+                "bot bot bot"
+                "ft ft ft";
         }
 
         /* ── Topbar ── */
-        .top{grid-area:top;background:var(--bg-card);border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 16px;z-index:100}
-        .top-l{font-size:.7em;color:var(--dim)}
-        .top-t{font-size:18px;font-weight:800;color:var(--cyan);letter-spacing:4px;text-align:center;text-shadow:0 0 18px rgba(6,182,212,.35)}
-        .top-s{display:flex;gap:12px;font-size:.76em;color:var(--text2);justify-content:flex-end}
-        .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle}
-        .dg{background:var(--green)}.dr{background:var(--red)}.dy{background:var(--yellow)}
+        .top{
+            grid-area:top;
+            position:relative;
+            display:grid;
+            grid-template-columns:minmax(220px, 1fr) auto minmax(220px, 1fr);
+            align-items:center;
+            gap:18px;
+            padding:0 18px;
+            background:linear-gradient(180deg, rgba(8,21,40,.94), rgba(6,15,29,.82));
+            border:1px solid var(--border);
+            border-radius:22px;
+            box-shadow:var(--shadow), var(--shadow-glow);
+            overflow:hidden;
+        }
+        .top::before{
+            content:'';
+            position:absolute;
+            inset:0;
+            background:
+                linear-gradient(90deg, transparent, rgba(93,232,255,.1), transparent),
+                linear-gradient(180deg, rgba(255,255,255,.03), transparent 45%);
+            pointer-events:none;
+        }
+        .top::after{
+            content:'';
+            position:absolute;
+            left:16px;
+            right:16px;
+            bottom:10px;
+            height:1px;
+            background:linear-gradient(90deg, transparent, rgba(93,232,255,.44), transparent);
+            pointer-events:none;
+        }
+        .top-l{display:flex;flex-direction:column;gap:4px;position:relative;z-index:1}
+        .top-kicker{
+            font-size:10px;
+            letter-spacing:.34em;
+            color:var(--cyan);
+            text-transform:uppercase;
+        }
+        .top-sub{
+            color:var(--text2);
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        .top-t{
+            position:relative;
+            z-index:1;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:2px;
+            text-align:center;
+        }
+        .top-title-cn{
+            font-size:28px;
+            font-weight:900;
+            letter-spacing:.2em;
+            color:var(--text);
+            text-shadow:0 0 24px rgba(93,232,255,.24);
+        }
+        .top-title-en{
+            font-size:11px;
+            letter-spacing:.42em;
+            color:var(--dim);
+            text-transform:uppercase;
+        }
+        .top-s{
+            position:relative;
+            z-index:1;
+            display:flex;
+            justify-content:flex-end;
+            align-items:center;
+            gap:10px;
+            flex-wrap:wrap;
+            font-size:.76em;
+            color:var(--text2);
+        }
+        .status-pill{
+            display:flex;
+            align-items:center;
+            gap:6px;
+            padding:7px 10px;
+            background:rgba(10, 27, 48, 0.7);
+            border:1px solid rgba(93,232,255,.14);
+            border-radius:999px;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+        }
+        .status-label{color:var(--dim)}
+        .dot{
+            width:8px;
+            height:8px;
+            border-radius:50%;
+            display:inline-block;
+            box-shadow:0 0 12px currentColor;
+        }
+        .dg{background:var(--green);color:var(--green)}
+        .dr{background:var(--red);color:var(--red)}
+        .dy{background:var(--yellow);color:var(--yellow)}
 
-        /* ── Left column ── */
-        .left{grid-area:left;display:flex;flex-direction:column;padding:4px;gap:4px;overflow:hidden}
+        /* ── Columns ── */
+        .left-rail,
+        .right,
+        .left{
+            min-height:0;
+            display:flex;
+            flex-direction:column;
+            gap:12px;
+        }
+        .left-rail{grid-area:side-left}
+        .left{grid-area:center}
+        .right{grid-area:side-right}
+        .left-rail,
+        .right{
+            overflow-y:auto;
+            overflow-x:hidden;
+            padding-right:2px;
+        }
+        .left-rail::-webkit-scrollbar,
+        .right::-webkit-scrollbar,
+        .cb::-webkit-scrollbar,
+        .al::-webkit-scrollbar,
+        .logb::-webkit-scrollbar{width:4px}
+        .left-rail::-webkit-scrollbar-thumb,
+        .right::-webkit-scrollbar-thumb,
+        .cb::-webkit-scrollbar-thumb,
+        .al::-webkit-scrollbar-thumb,
+        .logb::-webkit-scrollbar-thumb{
+            background:linear-gradient(180deg, rgba(93,232,255,.36), rgba(93,232,255,.08));
+            border-radius:999px;
+        }
 
-        /* Sim strip — compact horizontal summary */
-        .sim{flex:0 0 auto;display:flex;gap:4px;padding:6px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r)}
-        .sim-blk{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
-        .sim-lbl{font-size:.65em;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
-        .sim-val{font-size:.82em;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .sim-sub{font-size:.7em;color:var(--text2)}
+        /* ── Center stage summary ── */
+        .sim{
+            flex:0 0 auto;
+            display:grid;
+            grid-template-columns:2fr repeat(4, minmax(0, 1fr));
+            gap:10px;
+            padding:10px 12px;
+            background:linear-gradient(180deg, rgba(8,21,40,.86), rgba(5,15,28,.72));
+            border:1px solid var(--border);
+            border-radius:22px;
+            box-shadow:var(--shadow-glow);
+            overflow:hidden;
+        }
+        .sim-blk{
+            position:relative;
+            min-width:0;
+            display:flex;
+            flex-direction:column;
+            gap:5px;
+            padding:10px 12px;
+            background:rgba(7, 18, 34, 0.56);
+            border:1px solid rgba(93,232,255,.12);
+            border-radius:16px;
+            overflow:hidden;
+        }
+        .sim-blk::after{
+            content:'';
+            position:absolute;
+            inset:auto 10px 0;
+            height:2px;
+            background:linear-gradient(90deg, transparent, rgba(93,232,255,.42), transparent);
+        }
+        .sim-lbl{
+            font-size:10px;
+            color:var(--dim);
+            text-transform:uppercase;
+            letter-spacing:.28em;
+        }
+        .sim-val{
+            font-size:15px;
+            font-weight:800;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            font-variant-numeric:tabular-nums;
+        }
+        .sim-sub{
+            font-size:11px;
+            color:var(--text2);
+            line-height:1.5;
+        }
+        .sim-emphasis{color:var(--cyan)}
 
-        /* Map — hero area */
-        #map{flex:1;border:1px solid var(--border);border-radius:var(--r);position:relative;min-height:200px}
-        .map-badge{position:absolute;top:6px;left:6px;z-index:500;background:rgba(17,24,39,.9);padding:3px 10px;border-radius:3px;font-size:.7em;color:var(--dim);border:1px solid var(--border)}
-        .map-prov{position:absolute;top:6px;right:6px;z-index:500;background:rgba(17,24,39,.9);padding:3px 8px;border-radius:3px;font-size:.66em;color:var(--dim);border:1px solid var(--border);cursor:pointer}
-        .map-prov:hover{color:var(--cyan);border-color:var(--cyan)}
+        /* ── Main map stage ── */
+        .map-stage{
+            position:relative;
+            flex:1;
+            min-height:0;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+        .stage-titlebar{
+            display:flex;
+            align-items:flex-end;
+            justify-content:space-between;
+            gap:12px;
+            padding:0 4px;
+        }
+        .stage-kicker{
+            font-size:10px;
+            color:var(--cyan);
+            letter-spacing:.34em;
+            text-transform:uppercase;
+        }
+        .stage-name{
+            font-size:22px;
+            font-weight:800;
+            letter-spacing:.08em;
+        }
+        .stage-caption{
+            font-size:12px;
+            color:var(--text2);
+            padding:7px 12px;
+            border:1px solid rgba(93,232,255,.14);
+            border-radius:999px;
+            background:rgba(7,18,34,.56);
+            white-space:nowrap;
+        }
+        #map{
+            position:relative;
+            flex:1;
+            min-height:200px;
+            border-radius:28px;
+            border:1px solid rgba(93,232,255,.18);
+            box-shadow:0 0 0 1px rgba(255,255,255,.03), 0 26px 50px rgba(0,0,0,.45), 0 0 34px rgba(26, 110, 255, .16);
+            overflow:hidden;
+            background:
+                radial-gradient(circle at 50% 50%, rgba(15, 73, 116, 0.2), transparent 48%),
+                linear-gradient(180deg, rgba(6,15,28,.96), rgba(3,9,18,.98));
+        }
+        #map::before,
+        #map::after{
+            content:'';
+            position:absolute;
+            inset:12px;
+            border:1px solid rgba(93,232,255,.08);
+            border-radius:22px;
+            pointer-events:none;
+            z-index:410;
+        }
+        #map::after{
+            inset:0;
+            border-radius:28px;
+            border:1px solid rgba(93,232,255,.22);
+            mask:
+                linear-gradient(#000 0 0) content-box,
+                linear-gradient(#000 0 0);
+            -webkit-mask:
+                linear-gradient(#000 0 0) content-box,
+                linear-gradient(#000 0 0);
+            padding:16px;
+            opacity:.65;
+        }
+        .map-badge,
+        .map-prov,
+        .stage-overlay,
+        .stage-footer-hud{
+            z-index:500;
+        }
+        .map-badge{
+            position:absolute;
+            top:14px;
+            left:14px;
+            padding:9px 14px;
+            border-radius:999px;
+            font-size:11px;
+            color:var(--text2);
+            letter-spacing:.06em;
+            background:rgba(7,18,34,.82);
+            border:1px solid rgba(93,232,255,.14);
+            box-shadow:0 0 24px rgba(0,0,0,.18);
+        }
+        .map-prov{
+            position:absolute;
+            top:14px;
+            right:14px;
+            padding:9px 12px;
+            border-radius:999px;
+            font-size:11px;
+            color:var(--text2);
+            background:rgba(7,18,34,.82);
+            border:1px solid rgba(93,232,255,.14);
+            cursor:pointer;
+            transition:all .18s ease;
+            pointer-events:auto;
+        }
+        .map-prov:hover{
+            color:var(--cyan);
+            border-color:rgba(93,232,255,.4);
+            box-shadow:0 0 18px rgba(93,232,255,.12);
+        }
+        .stage-overlay{
+            position:absolute;
+            display:grid;
+            gap:10px;
+            pointer-events:none;
+        }
+        .stage-overlay-left{
+            top:62px;
+            left:16px;
+            width:min(250px, calc(100% - 32px));
+        }
+        .stage-overlay-right{
+            top:62px;
+            right:16px;
+            width:min(220px, calc(100% - 32px));
+        }
+        .hud-module{
+            padding:10px 12px;
+            background:rgba(7,18,34,.72);
+            border:1px solid rgba(93,232,255,.12);
+            border-radius:16px;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+            backdrop-filter:blur(10px);
+        }
+        .hud-label{
+            display:block;
+            font-size:10px;
+            color:var(--dim);
+            letter-spacing:.24em;
+            text-transform:uppercase;
+            margin-bottom:6px;
+        }
+        .hud-value{
+            display:block;
+            font-size:18px;
+            font-weight:800;
+            letter-spacing:.04em;
+            color:var(--text);
+            font-variant-numeric:tabular-nums;
+        }
+        .hud-chip{
+            display:inline-flex;
+            align-items:center;
+            gap:6px;
+            padding:4px 10px;
+            border-radius:999px;
+            font-size:13px;
+            font-weight:800;
+            border:1px solid transparent;
+        }
+        .hud-risk-low{background:rgba(101,243,180,.16);border-color:rgba(101,243,180,.3);color:var(--green)}
+        .hud-risk-medium{background:rgba(255,212,79,.16);border-color:rgba(255,212,79,.3);color:var(--yellow)}
+        .hud-risk-high{background:rgba(255,95,127,.16);border-color:rgba(255,95,127,.3);color:var(--red)}
+        .stage-footer-hud{
+            position:absolute;
+            left:16px;
+            right:16px;
+            bottom:16px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            padding:10px 12px;
+            border-radius:16px;
+            background:linear-gradient(90deg, rgba(7,18,34,.82), rgba(7,18,34,.52));
+            border:1px solid rgba(93,232,255,.12);
+            color:var(--text2);
+            font-size:11px;
+            letter-spacing:.04em;
+            pointer-events:none;
+        }
+        .footer-chip{
+            padding:4px 8px;
+            border-radius:999px;
+            font-size:10px;
+            letter-spacing:.24em;
+            text-transform:uppercase;
+            color:var(--cyan);
+            border:1px solid rgba(93,232,255,.2);
+            background:rgba(93,232,255,.08);
+        }
 
-        /* ── Right column ── */
-        .right{grid-area:right;overflow-y:auto;overflow-x:hidden;padding:4px;display:flex;flex-direction:column;gap:4px}
-        .right .c:nth-child(1){flex:0.9}
-        .right .c:nth-child(2){flex:1.3}
-        .right .c:nth-child(3){flex:0.8}
-        .right::-webkit-scrollbar{width:3px}
-        .right::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+        /* Leaflet visual tuning */
+        #map .leaflet-control-zoom a,
+        #map .leaflet-bar a{
+            background:rgba(7,18,34,.82);
+            color:var(--text);
+            border-bottom-color:rgba(93,232,255,.12);
+        }
+        #map .leaflet-bar{
+            border:1px solid rgba(93,232,255,.18);
+            box-shadow:0 10px 24px rgba(0,0,0,.22);
+        }
+        #map .leaflet-control-attribution{
+            background:rgba(7,18,34,.62);
+            color:var(--dim);
+        }
+        #map .leaflet-tooltip{
+            background:rgba(7,18,34,.92);
+            color:var(--text);
+            border:1px solid rgba(93,232,255,.18);
+            border-radius:10px;
+            box-shadow:0 10px 26px rgba(0,0,0,.24);
+        }
+        #map .leaflet-heatmap-layer{
+            mix-blend-mode:screen;
+            opacity:.88;
+            filter:saturate(1.08) contrast(1.04);
+        }
+        #map .stage-tile-layer{
+            filter:grayscale(1) saturate(.32) brightness(.62) contrast(1.08);
+        }
+        #map .twin-area-shell{
+            filter:drop-shadow(0 0 14px rgba(62, 166, 255, .08));
+        }
+        #map .twin-corridor-halo{
+            filter:drop-shadow(0 0 22px rgba(93, 232, 255, .18));
+        }
+        #map .twin-corridor-core{
+            filter:drop-shadow(0 0 10px rgba(93, 232, 255, .1));
+        }
+        #map .twin-corridor-axis{
+            filter:drop-shadow(0 0 8px rgba(132, 241, 255, .28));
+        }
+        #map .twin-risk-shell{
+            filter:drop-shadow(0 0 20px rgba(255, 135, 79, .18));
+        }
+        #map .twin-risk-core{
+            filter:drop-shadow(0 0 12px rgba(255, 115, 115, .18));
+        }
+        #map .twin-track-halo{
+            filter:drop-shadow(0 0 16px rgba(93,232,255,.18));
+        }
+        #map .twin-track-core{
+            filter:drop-shadow(0 0 10px rgba(93,232,255,.34));
+        }
+        #map .twin-grid-line{
+            stroke-dasharray:4 10;
+        }
+        #map .stage-label{
+            padding:7px 10px;
+            border-radius:12px;
+            border:1px solid rgba(93,232,255,.16);
+            background:linear-gradient(180deg, rgba(8, 26, 44, 0.94), rgba(6, 15, 29, 0.86));
+            color:var(--text);
+            box-shadow:0 10px 24px rgba(0,0,0,.24), inset 0 0 0 1px rgba(255,255,255,.03);
+            white-space:nowrap;
+            font-size:11px;
+            font-weight:800;
+            letter-spacing:.04em;
+        }
+        #map .stage-label small{
+            display:block;
+            margin-top:3px;
+            color:var(--text2);
+            font-size:9px;
+            letter-spacing:.12em;
+            text-transform:uppercase;
+        }
+        #map .stage-label-risk{
+            border-color:rgba(255, 145, 77, .28);
+            box-shadow:0 10px 24px rgba(0,0,0,.24), 0 0 16px rgba(255,145,77,.12);
+        }
+        #map .stage-label-accent{
+            border-color:rgba(93,232,255,.22);
+            box-shadow:0 10px 24px rgba(0,0,0,.24), 0 0 16px rgba(93,232,255,.1);
+        }
+        #map .stage-label-subtle{
+            font-size:10px;
+            padding:5px 8px;
+            border-radius:10px;
+            color:var(--text2);
+            border-color:rgba(93,232,255,.1);
+            background:rgba(7,18,34,.82);
+        }
+        @keyframes agvPulse{
+            0%{transform:translate(-50%,-50%) scale(.82);opacity:.72}
+            70%{transform:translate(-50%,-50%) scale(1.38);opacity:0}
+            100%{transform:translate(-50%,-50%) scale(1.5);opacity:0}
+        }
+        #map .agv-stage-marker{
+            position:relative;
+            width:68px;
+            height:68px;
+        }
+        #map .agv-pulse,
+        #map .agv-halo{
+            position:absolute;
+            left:50%;
+            top:50%;
+            border-radius:50%;
+            transform:translate(-50%,-50%);
+            pointer-events:none;
+        }
+        #map .agv-pulse{
+            width:56px;
+            height:56px;
+            border:1px solid rgba(93,232,255,.32);
+            background:radial-gradient(circle, rgba(93,232,255,.16), rgba(93,232,255,0));
+            animation:agvPulse 2.4s ease-out infinite;
+        }
+        #map .agv-halo{
+            width:42px;
+            height:42px;
+            background:radial-gradient(circle, rgba(93,232,255,.32), rgba(93,232,255,.02) 72%);
+            box-shadow:0 0 22px rgba(93,232,255,.24);
+        }
+        #map .agv-marker-rotor{
+            position:absolute;
+            left:50%;
+            top:50%;
+            width:38px;
+            height:38px;
+            transform:translate(-50%,-50%) rotate(0deg);
+            transition:transform .12s linear;
+        }
+        #map .agv-body{
+            position:absolute;
+            inset:0;
+            border-radius:14px;
+            background:linear-gradient(180deg, #95fbff, #39d9ff 58%, #0f6ecf 100%);
+            border:2px solid rgba(255,255,255,.9);
+            box-shadow:0 0 20px rgba(93,232,255,.34), inset 0 0 0 1px rgba(255,255,255,.18);
+        }
+        #map .agv-cabin{
+            position:absolute;
+            left:8px;
+            right:8px;
+            top:6px;
+            height:10px;
+            border-radius:8px;
+            background:rgba(7,18,34,.76);
+            box-shadow:inset 0 0 0 1px rgba(154,243,255,.16);
+        }
+        #map .agv-direction{
+            position:absolute;
+            left:50%;
+            top:-6px;
+            width:0;
+            height:0;
+            transform:translateX(-50%);
+            border-left:6px solid transparent;
+            border-right:6px solid transparent;
+            border-bottom:11px solid #b8feff;
+            filter:drop-shadow(0 0 8px rgba(184,254,255,.58));
+        }
+        #map .agv-label{
+            position:absolute;
+            left:50%;
+            bottom:-2px;
+            transform:translate(-50%,100%);
+            padding:3px 8px;
+            border-radius:999px;
+            border:1px solid rgba(93,232,255,.18);
+            background:rgba(7,18,34,.9);
+            color:var(--text);
+            font-size:10px;
+            font-weight:800;
+            letter-spacing:.08em;
+            white-space:nowrap;
+        }
 
-        /* ── Bottom row: 3-col, right col stacks 2 compact cards ── */
-        .bot{grid-area:bot;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr;gap:4px;padding:0 4px 4px;overflow:hidden}
-        .bot .c{overflow:hidden;display:flex;flex-direction:column;min-height:0}
-        .bot .cb{overflow-y:auto;display:flex;flex-direction:column;min-height:0}
-        .bot .c-tall{grid-row:span 2}
-        .bot .c-compact{grid-row:span 1}
-
-        /* ── Footer ── */
-        .ft{grid-area:ft;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:.68em;color:var(--dim)}
-
-        /* ═══ Card ═══ */
-        .c{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);display:flex;flex-direction:column;overflow:visible}
-        .ch{padding:8px 12px;font-size:15px;font-weight:700;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0;color:var(--text2);letter-spacing:.3px}
-        .ch-icon{font-size:16px;line-height:1}
-        .cb{padding:10px 12px;font-size:.84em;flex:1;overflow-y:auto}
-        .cb::-webkit-scrollbar{width:3px}
-        .cb::-webkit-scrollbar-thumb{background:var(--border)}
-
-        /* ── Rows ── */
-        .row{display:flex;justify-content:space-between;align-items:center;padding:3px 0}
-        .lbl{color:var(--text2);font-size:12px}
-        .val{font-weight:700;font-variant-numeric:tabular-nums;font-size:15px}
-        .val-sm{font-weight:600;font-size:13px}
+        /* ── Cards ── */
+        .c{
+            position:relative;
+            min-height:0;
+            display:flex;
+            flex-direction:column;
+            overflow:hidden;
+            background:linear-gradient(180deg, rgba(8, 22, 42, 0.88), rgba(6, 15, 29, 0.76));
+            border:1px solid var(--border);
+            border-radius:var(--r);
+            box-shadow:var(--shadow), var(--shadow-glow);
+            backdrop-filter:blur(14px);
+        }
+        .c::before{
+            content:'';
+            position:absolute;
+            inset:0;
+            pointer-events:none;
+            background:
+                linear-gradient(135deg, rgba(93,232,255,.08), transparent 28%),
+                linear-gradient(315deg, rgba(93,232,255,.05), transparent 24%);
+        }
+        .c::after{
+            content:'';
+            position:absolute;
+            top:10px;
+            right:10px;
+            width:34px;
+            height:34px;
+            border-top:1px solid rgba(93,232,255,.18);
+            border-right:1px solid rgba(93,232,255,.18);
+            opacity:.5;
+            pointer-events:none;
+        }
+        .ch{
+            position:relative;
+            z-index:1;
+            padding:14px 16px 12px;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            border-bottom:1px solid rgba(93,232,255,.1);
+            color:var(--text2);
+            font-size:14px;
+            font-weight:800;
+            letter-spacing:.14em;
+            text-transform:uppercase;
+            flex-shrink:0;
+        }
+        .ch::after{
+            content:'';
+            position:absolute;
+            left:16px;
+            right:16px;
+            bottom:0;
+            height:1px;
+            background:linear-gradient(90deg, rgba(93,232,255,.28), transparent);
+        }
+        .ch-index{
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            min-width:28px;
+            height:28px;
+            padding:0 7px;
+            border-radius:999px;
+            border:1px solid rgba(93,232,255,.18);
+            color:var(--cyan);
+            font-size:11px;
+            font-weight:900;
+            letter-spacing:.14em;
+            background:rgba(93,232,255,.08);
+        }
+        .cb{
+            position:relative;
+            z-index:1;
+            padding:14px 16px 16px;
+            font-size:.84em;
+            flex:1;
+            overflow-y:auto;
+        }
+        .spotlight{
+            padding:14px;
+            border-radius:16px;
+            border:1px solid rgba(93,232,255,.14);
+            background:linear-gradient(180deg, rgba(13, 34, 62, 0.68), rgba(7, 18, 34, 0.54));
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.02);
+            margin-bottom:14px;
+        }
+        .spotlight-label{
+            font-size:10px;
+            color:var(--dim);
+            letter-spacing:.24em;
+            text-transform:uppercase;
+            margin-bottom:6px;
+        }
+        .spotlight-main{
+            font-size:24px;
+            font-weight:900;
+            color:var(--text);
+            line-height:1.15;
+            text-shadow:0 0 20px rgba(93,232,255,.14);
+        }
+        .spotlight-sub{
+            margin-top:8px;
+            color:var(--text2);
+            font-size:12px;
+            line-height:1.6;
+        }
+        .spotlight-scene .spotlight-main{font-size:20px}
+        .metric-grid{
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+        }
+        .metric-box{
+            padding:12px;
+            border-radius:14px;
+            background:rgba(6, 17, 31, 0.62);
+            border:1px solid rgba(93,232,255,.1);
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:0;
+        }
+        .row{
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:10px;
+            padding:6px 0;
+        }
+        .lbl{
+            color:var(--text2);
+            font-size:12px;
+            line-height:1.45;
+        }
+        .val{
+            font-weight:800;
+            font-variant-numeric:tabular-nums;
+            font-size:20px;
+            color:var(--text);
+            line-height:1.05;
+            text-align:right;
+        }
+        .val-sm{
+            font-weight:700;
+            font-size:13px;
+            color:var(--text);
+            line-height:1.5;
+            text-align:right;
+        }
+        .panel-note,
+        .subpanel{
+            margin-top:12px;
+            padding:10px 12px;
+            border-radius:14px;
+            font-size:12px;
+            line-height:1.6;
+            color:var(--text2);
+            border:1px solid rgba(93,232,255,.12);
+            background:rgba(8, 21, 40, 0.6);
+        }
 
         /* ── Badges ── */
-        .badge{display:inline-block;padding:2px 10px;border-radius:3px;font-size:13px;font-weight:700}
-        .badge-lg{font-size:16px;padding:4px 14px;border-radius:4px}
-        .badge-safe{background:rgba(34,197,94,.15);color:var(--green)}
-        .badge-warn{background:rgba(234,179,8,.15);color:var(--yellow)}
-        .badge-danger{background:rgba(239,68,68,.15);color:var(--red)}
-        .badge-idle{background:rgba(148,163,184,.12);color:var(--text2)}
-        .badge-manual{background:rgba(59,130,246,.15);color:var(--blue)}
-        .badge-mission{background:rgba(249,115,22,.15);color:var(--orange)}
-        .badge-online{background:rgba(34,197,94,.15);color:var(--green)}
-        .badge-offline{background:rgba(239,68,68,.15);color:var(--red)}
+        .badge{
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            padding:4px 12px;
+            border-radius:999px;
+            font-size:12px;
+            font-weight:800;
+            letter-spacing:.05em;
+            border:1px solid transparent;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+        }
+        .badge-lg{font-size:17px;padding:7px 16px}
+        .badge-safe{background:rgba(101,243,180,.14);border-color:rgba(101,243,180,.24);color:var(--green)}
+        .badge-warn{background:rgba(255,212,79,.14);border-color:rgba(255,212,79,.24);color:var(--yellow)}
+        .badge-danger{background:rgba(255,95,127,.14);border-color:rgba(255,95,127,.24);color:var(--red)}
+        .badge-idle{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.2);color:var(--text2)}
+        .badge-manual{background:rgba(77,136,255,.14);border-color:rgba(77,136,255,.24);color:var(--blue)}
+        .badge-mission{background:rgba(255,158,74,.14);border-color:rgba(255,158,74,.24);color:var(--orange)}
+        .badge-online{background:rgba(101,243,180,.14);border-color:rgba(101,243,180,.24);color:var(--green)}
+        .badge-offline{background:rgba(255,95,127,.14);border-color:rgba(255,95,127,.24);color:var(--red)}
 
-        /* ── Risk bar ── */
-        .rtrack{width:100%;height:5px;background:#1e293b;border-radius:3px;margin-top:4px;overflow:hidden}
-        .rfill{height:100%;border-radius:3px;transition:width .3s,background .3s}
-
-        /* ── Alerts ── */
-        .al{flex:1;min-height:0;overflow-y:auto;font-size:.8em}
-        .al::-webkit-scrollbar{width:2px}
-        .al::-webkit-scrollbar-thumb{background:var(--border)}
-        .ai{padding:4px 0;border-bottom:1px solid rgba(30,41,59,.5);display:flex;gap:6px}
-        .ai:last-child{border-bottom:none}
-        .ad{width:5px;height:5px;border-radius:50%;margin-top:4px;flex-shrink:0}
-        .ad-info{background:var(--blue)}.ad-warn{background:var(--yellow)}.ad-critical{background:var(--red)}
-        .at{color:var(--dim);font-size:.82em}
+        /* ── Mission / routes ── */
+        #routeButtons{
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+            margin-top:12px;
+        }
+        .route-title{
+            font-size:12px;
+            color:var(--orange);
+            letter-spacing:.14em;
+            text-transform:uppercase;
+            margin-bottom:4px;
+        }
+        .rbtn{
+            width:100%;
+            text-align:left;
+            padding:10px 12px;
+            border-radius:14px;
+            margin:0;
+            line-height:1.45;
+        }
+        .rbtn.active{
+            background:rgba(255,158,74,.18);
+            border-color:rgba(255,158,74,.36);
+            color:#fff4e7;
+            box-shadow:0 0 18px rgba(255,158,74,.12);
+        }
 
         /* ── Controls ── */
-        .cg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;max-width:180px;margin:0 auto 6px}
-        .btn{padding:7px 4px;border:1px solid var(--border);background:var(--bg-alt);color:var(--text);border-radius:3px;cursor:pointer;font-size:.78em;text-align:center;transition:background .12s}
-        .btn:hover{background:#1e293b}.btn:active{background:var(--blue)}
-        .btn-stop{width:100%;background:rgba(239,68,68,.15);border-color:var(--red);color:var(--red);font-weight:700}
-        .btn-stop:hover{background:rgba(239,68,68,.3)}
-        .rbtn{width:100%;text-align:left;padding:5px 10px;margin-bottom:3px}
-        .rbtn.active{background:rgba(249,115,22,.2);border-color:var(--orange);color:var(--orange)}
+        .cg{
+            display:grid;
+            grid-template-columns:1fr 1fr 1fr;
+            gap:8px;
+            max-width:220px;
+            margin:0 auto 12px;
+        }
+        .btn{
+            padding:10px 8px;
+            border:1px solid rgba(93,232,255,.16);
+            background:linear-gradient(180deg, rgba(12, 34, 60, 0.86), rgba(8, 20, 38, 0.74));
+            color:var(--text);
+            border-radius:14px;
+            cursor:pointer;
+            font-size:12px;
+            font-weight:700;
+            text-align:center;
+            transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.02);
+        }
+        .btn:hover{
+            transform:translateY(-1px);
+            border-color:rgba(93,232,255,.34);
+            box-shadow:0 0 18px rgba(93,232,255,.08);
+        }
+        .btn:active{transform:translateY(0)}
+        .btn-stop{
+            width:100%;
+            background:linear-gradient(180deg, rgba(77, 18, 33, 0.9), rgba(39, 10, 18, 0.82));
+            border-color:rgba(255,95,127,.28);
+            color:#ffd8df;
+            font-weight:800;
+        }
+        .btn-stop:hover{border-color:rgba(255,95,127,.42);box-shadow:0 0 18px rgba(255,95,127,.12)}
+        .control-note{
+            color:var(--dim);
+            font-size:11px;
+            margin-top:10px;
+            text-align:center;
+            line-height:1.7;
+        }
 
-        /* ── Layer ── */
-        .lrow{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:.8em;cursor:pointer}
-        .lrow input{cursor:pointer}
-        .lgr{display:flex;align-items:center;gap:6px;font-size:.76em;padding:1px 0}
-        .lgsw{width:18px;height:8px;border-radius:2px}
+        /* ── Fleet overview ── */
+        .fleet-stats{
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:8px;
+            margin-bottom:12px;
+        }
+        .fleet-stat{
+            padding:10px 12px;
+            border-radius:14px;
+            background:rgba(6, 17, 31, 0.62);
+            border:1px solid rgba(93,232,255,.1);
+            min-width:0;
+        }
+        .fleet-stat-label{
+            font-size:10px;
+            color:var(--dim);
+            letter-spacing:.18em;
+            text-transform:uppercase;
+            margin-bottom:6px;
+        }
+        .fleet-stat-value{
+            font-size:22px;
+            font-weight:900;
+            color:var(--text);
+            line-height:1;
+            font-variant-numeric:tabular-nums;
+        }
+        .fleet-list{
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+            min-height:0;
+            max-height:118px;
+            overflow-y:auto;
+            margin-bottom:12px;
+            padding-right:2px;
+        }
+        .fleet-empty{
+            padding:18px 12px;
+            text-align:center;
+            color:var(--dim);
+            font-size:12px;
+            border:1px dashed rgba(93,232,255,.14);
+            border-radius:14px;
+            background:rgba(8, 21, 40, 0.38);
+        }
+        .fleet-row{
+            padding:10px 12px;
+            border-radius:14px;
+            border:1px solid rgba(93,232,255,.1);
+            background:rgba(6, 17, 31, 0.62);
+            cursor:pointer;
+            transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+        }
+        .fleet-row:hover{
+            transform:translateY(-1px);
+            border-color:rgba(93,232,255,.24);
+            box-shadow:0 0 18px rgba(93,232,255,.08);
+        }
+        .fleet-row.is-selected{
+            border-color:rgba(93,232,255,.36);
+            background:linear-gradient(180deg, rgba(11, 34, 58, 0.9), rgba(7, 18, 34, 0.78));
+            box-shadow:0 0 24px rgba(93,232,255,.12);
+        }
+        .fleet-row-top{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:10px;
+        }
+        .fleet-id-wrap{
+            min-width:0;
+            display:flex;
+            align-items:center;
+            gap:8px;
+        }
+        .fleet-id{
+            font-size:13px;
+            font-weight:900;
+            color:var(--text);
+            letter-spacing:.04em;
+            white-space:nowrap;
+        }
+        .fleet-focus-tag{
+            display:none;
+            padding:2px 8px;
+            border-radius:999px;
+            border:1px solid rgba(93,232,255,.22);
+            background:rgba(93,232,255,.08);
+            color:var(--cyan);
+            font-size:10px;
+            font-weight:800;
+            letter-spacing:.12em;
+            text-transform:uppercase;
+        }
+        .fleet-row.is-selected .fleet-focus-tag{display:inline-flex}
+        .fleet-speed{
+            font-size:12px;
+            font-weight:800;
+            color:var(--text2);
+            white-space:nowrap;
+            font-variant-numeric:tabular-nums;
+        }
+        .fleet-row-badges{
+            display:flex;
+            flex-wrap:wrap;
+            gap:6px;
+            margin-top:8px;
+        }
+        .fleet-chip{
+            padding:3px 8px;
+            font-size:11px;
+        }
+        .fleet-focus{
+            padding:10px 12px;
+            border-radius:14px;
+            border:1px solid rgba(93,232,255,.12);
+            background:rgba(8, 21, 40, 0.6);
+        }
+        .fleet-focus-label{
+            font-size:10px;
+            color:var(--dim);
+            letter-spacing:.18em;
+            text-transform:uppercase;
+            margin-bottom:8px;
+        }
+        .fleet-focus-main{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:10px;
+            font-size:13px;
+            font-weight:800;
+            color:var(--text);
+        }
+        .fleet-focus-meta{
+            margin-top:8px;
+            display:flex;
+            flex-wrap:wrap;
+            gap:6px;
+            align-items:center;
+            color:var(--text2);
+            font-size:11px;
+        }
 
-        /* ── Log ── */
-        .logp{position:fixed;bottom:24px;left:0;right:0;height:150px;background:var(--bg-card);border-top:1px solid var(--border);z-index:200;display:none;flex-direction:column}
+        /* ── Bottom deck ── */
+        .bot{
+            grid-area:bot;
+            display:grid;
+            grid-template-columns:1.2fr 1.2fr .86fr 1fr;
+            gap:12px;
+            overflow:hidden;
+        }
+        .bot .c,
+        .bot .cb{min-height:0}
+        .bot .c-tall,
+        .bot .c-compact{grid-row:auto}
+        .risk-hero{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            padding:14px;
+            border-radius:16px;
+            border:1px solid rgba(255,212,79,.14);
+            background:linear-gradient(180deg, rgba(33, 28, 8, 0.34), rgba(8, 18, 34, 0.2));
+            margin-bottom:12px;
+        }
+        .risk-score-label{
+            font-size:10px;
+            color:var(--dim);
+            letter-spacing:.24em;
+            text-transform:uppercase;
+            margin-bottom:6px;
+        }
+        .risk-score-value{
+            font-size:30px;
+            font-weight:900;
+            line-height:1;
+            color:var(--text);
+            font-variant-numeric:tabular-nums;
+        }
+        .rtrack{
+            width:100%;
+            height:8px;
+            background:rgba(255,255,255,.05);
+            border-radius:999px;
+            margin-top:6px;
+            overflow:hidden;
+            border:1px solid rgba(255,255,255,.03);
+        }
+        .rfill{height:100%;border-radius:999px;transition:width .3s,background .3s}
+
+        /* ── Alerts ── */
+        .al{
+            flex:1;
+            min-height:0;
+            overflow-y:auto;
+            font-size:.8em;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+        }
+        .ai{
+            padding:10px 0;
+            border-bottom:1px solid rgba(93,232,255,.08);
+            display:flex;
+            gap:10px;
+        }
+        .ai:last-child{border-bottom:none}
+        .ad{
+            width:8px;
+            height:8px;
+            border-radius:50%;
+            margin-top:6px;
+            flex-shrink:0;
+            box-shadow:0 0 12px currentColor;
+        }
+        .ad-info{background:var(--blue);color:var(--blue)}
+        .ad-warn{background:var(--yellow);color:var(--yellow)}
+        .ad-critical{background:var(--red);color:var(--red)}
+        .at{color:var(--dim);font-size:.82em;margin-top:4px}
+
+        /* ── Layer / legend ── */
+        .lrow{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            padding:7px 0;
+            font-size:12px;
+            cursor:pointer;
+            color:var(--text2);
+        }
+        .lrow input{cursor:pointer;accent-color:var(--cyan)}
+        .lgr{
+            display:flex;
+            align-items:center;
+            gap:8px;
+            font-size:11px;
+            padding:3px 0;
+            color:var(--text2);
+        }
+        .lgsw{width:22px;height:8px;border-radius:999px}
+
+        /* ── Log panel ── */
+        .logp{
+            position:fixed;
+            left:14px;
+            right:14px;
+            bottom:46px;
+            height:190px;
+            background:linear-gradient(180deg, rgba(7,18,34,.96), rgba(5,12,25,.94));
+            border:1px solid rgba(93,232,255,.14);
+            border-radius:18px;
+            box-shadow:var(--shadow), var(--shadow-glow);
+            z-index:200;
+            display:none;
+            flex-direction:column;
+            overflow:hidden;
+        }
         .logp.open{display:flex}
-        .logh{padding:4px 12px;font-size:.76em;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-        .logb{flex:1;overflow-y:auto;padding:4px 12px;font-family:Consolas,'Courier New',monospace;font-size:.72em;line-height:1.5}
-        .logb::-webkit-scrollbar{width:2px}.logb::-webkit-scrollbar-thumb{background:var(--border)}
-        .ll{padding:1px 0}.li{color:var(--blue)}.lw{color:var(--yellow)}.lc{color:var(--red)}.lt{color:var(--dim);margin-right:6px}
+        .logh{
+            padding:10px 14px;
+            font-size:12px;
+            font-weight:800;
+            letter-spacing:.14em;
+            text-transform:uppercase;
+            border-bottom:1px solid rgba(93,232,255,.1);
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            color:var(--text2);
+        }
+        .logb{
+            flex:1;
+            overflow-y:auto;
+            padding:10px 14px;
+            font-family:Consolas,'Courier New',monospace;
+            font-size:12px;
+            line-height:1.65;
+            color:#cfe6ff;
+        }
+        .ll{padding:2px 0}
+        .li{color:var(--blue)}
+        .lw{color:var(--yellow)}
+        .lc{color:var(--red)}
+        .lt{color:var(--dim);margin-right:8px}
+
+        /* ── Footer ── */
+        .ft{
+            grid-area:ft;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:14px;
+            padding:0 16px;
+            background:rgba(7,18,34,.78);
+            border:1px solid rgba(93,232,255,.12);
+            border-radius:16px;
+            font-size:11px;
+            color:var(--dim);
+            overflow:hidden;
+        }
+        .footer-link{
+            color:var(--cyan);
+            cursor:pointer;
+            text-decoration:none;
+            border-bottom:1px dashed rgba(93,232,255,.26);
+        }
+        .footer-link:hover{color:#aef4ff}
+        code{
+            font-family:Consolas,'Courier New',monospace;
+            color:#c8edff;
+            background:rgba(93,232,255,.08);
+            border:1px solid rgba(93,232,255,.1);
+            border-radius:999px;
+            padding:2px 8px;
+        }
 
         /* ═══ Responsive ═══ */
-        @media(min-width:1600px){:root{--right-w:360px}}
-        @media(max-width:1200px){:root{--right-w:290px} .bot{grid-template-columns:1fr 1fr;grid-template-rows:auto} .bot .c-tall{grid-row:span 1}}
-        @media(max-width:900px){
-            .ck{grid-template-columns:1fr;grid-template-rows:36px 1fr auto auto 24px;grid-template-areas:"top" "left" "right" "bot" "ft"}
-            .right{max-height:300px} .bot{grid-template-columns:1fr;grid-template-rows:auto;max-height:400px;overflow-y:auto}
-            .bot .c-tall{grid-row:span 1}
-            #map{min-height:280px} .sim{flex-wrap:wrap}
+        @media(max-width:1600px){
+            .ck{grid-template-columns:270px minmax(0,1fr) 310px}
+            .sim{grid-template-columns:1.7fr repeat(4, minmax(0, 1fr))}
+        }
+        @media(max-width:1280px){
+            .ck{
+                grid-template-columns:260px minmax(0,1fr);
+                grid-template-rows:var(--top-h) minmax(0,1fr) auto auto var(--footer-h);
+                grid-template-areas:
+                    "top top"
+                    "center side-right"
+                    "side-left side-left"
+                    "bot bot"
+                    "ft ft";
+            }
+            .left-rail{overflow:visible}
+            .bot{grid-template-columns:1fr 1fr;grid-template-rows:auto}
+            .sim{grid-template-columns:repeat(2, minmax(0, 1fr))}
+        }
+        @media(max-width:920px){
+            body{overflow:auto}
+            .ck{
+                height:auto;
+                min-height:100vh;
+                grid-template-columns:1fr;
+                grid-template-rows:auto;
+                grid-template-areas:
+                    "top"
+                    "center"
+                    "side-left"
+                    "side-right"
+                    "bot"
+                    "ft";
+            }
+            .top{grid-template-columns:1fr;justify-items:start;padding:14px 16px}
+            .top-t{align-items:flex-start;text-align:left}
+            .top-s{justify-content:flex-start}
+            .left,
+            .left-rail,
+            .right,
+            .bot{overflow:visible}
+            .bot{grid-template-columns:1fr}
+            .sim{grid-template-columns:1fr}
+            .stage-titlebar{flex-direction:column;align-items:flex-start}
+            #map{min-height:460px}
+            .stage-overlay-right,
+            .stage-overlay-left{
+                width:calc(100% - 32px);
+                left:16px;
+                right:16px;
+            }
+            .stage-overlay-right{top:auto;bottom:64px}
+            .stage-overlay-left{top:62px}
+            .metric-grid{grid-template-columns:1fr 1fr}
+            .logp{left:10px;right:10px;bottom:54px}
+            .ft{flex-direction:column;align-items:flex-start;padding:10px 14px;height:auto}
         }
     </style>
 </head>
@@ -157,81 +1282,176 @@
 
 <!-- ═══ Topbar ═══ -->
 <div class="top">
-    <div class="top-l">agv_ackermann</div>
-    <div class="top-t">港口 AGV 数字孪生驾驶舱</div>
+    <div class="top-l">
+        <div class="top-sub">周口港</div>
+    </div>
+    <div class="top-t">
+        <span class="top-title-cn">港口数字孪生系统—无人集卡安全预警平台</span>
+    </div>
     <div class="top-s">
-        <span><span class="dot dg" id="dotBackend"></span>后端 <span id="statusBackend">在线</span></span>
-        <span><span class="dot dr" id="dotRos2"></span>ROS2 <span id="statusRos2">离线</span></span>
-        <span><span class="dot dg" id="dotWs"></span>WS <span id="statusWs">连接中</span></span>
-        <span style="color:var(--dim)">更新 <span id="statusLastUpdate">--</span></span>
+        <span class="status-pill"><span class="dot dg" id="dotBackend"></span><span class="status-label">平台服务</span><span id="statusBackend">在线</span></span>
+        <span class="status-pill"><span class="dot dr" id="dotRos2"></span><span class="status-label">车辆接入</span><span id="statusRos2">离线</span></span>
+        <span class="status-pill"><span class="dot dy" id="dotWs"></span><span class="status-label">数据通道</span><span id="statusWs">连接中</span></span>
+        <span class="status-pill"><span class="status-label">更新</span><span id="statusLastUpdate">--</span></span>
     </div>
 </div>
 
-<!-- ═══ Left: sim strip + map ═══ -->
-<div class="left">
-    <!-- Sim strip — compact horizontal -->
-    <div class="sim">
-        <div class="sim-blk">
-            <div class="sim-lbl">仿真环境</div>
-            <div class="sim-val" style="color:var(--cyan)">Gazebo Fortress</div>
-            <div class="sim-sub">{{ scene_context.profile }} · {{ scene_context.title_cn }} · agv_ackermann · ros_gz_bridge</div>
-        </div>
-        <div class="sim-blk" style="max-width:140px">
-            <div class="sim-lbl">里程计</div>
-            <div><span class="badge badge-online" id="simOdom" style="font-size:.72em">在线</span></div>
-            <div class="sim-sub">/agv/odometry</div>
-        </div>
-        <div class="sim-blk" style="max-width:120px">
-            <div class="sim-lbl">数据来源</div>
-            <div class="sim-val" id="dataSource" style="font-size:.78em">--</div>
-        </div>
-        <div class="sim-blk" style="max-width:140px">
-            <div class="sim-lbl">3D 预览</div>
-            <div class="sim-sub" style="color:var(--dim)">桌面端 Gazebo/RViz</div>
-            <div class="sim-sub" style="font-size:.65em">后续集成 Web 3D</div>
-        </div>
-    </div>
-
-    <!-- Map — hero -->
-    <div id="map">
-        <div class="map-badge">{{ scene_context.title_cn }} · 400m 主场景 · 风险兼容层</div>
-        <div class="map-prov" id="mapProviderBadge" title="点击切换底图模式">底图: 仿真平面</div>
-    </div>
-</div>
-
-<!-- ═══ Right: status + mission + control + sensor ═══ -->
-<div class="right">
-    <!-- AGV 实时状态 -->
-    <div class="c" style="border-left:2px solid var(--cyan)">
-        <div class="ch" style="color:var(--cyan)"><span class="ch-icon">🚚</span> AGV 实时状态</div>
+<!-- ═══ Left Rail ═══ -->
+<aside class="left-rail">
+    <div class="c card-scene">
+        <div class="ch"><span class="ch-index">01</span> 运行概览</div>
         <div class="cb">
-            <div class="row"><span class="lbl">编号</span><span class="val-sm">agv-001 (Ackermann)</span></div>
-            <div class="row"><span class="lbl">X 坐标 (m)</span><span class="val" id="posX">--</span></div>
-            <div class="row"><span class="lbl">Y 坐标 (m)</span><span class="val" id="posY">--</span></div>
-            <div class="row"><span class="lbl">航向角 (°)</span><span class="val" id="heading">--</span></div>
-            <div class="row"><span class="lbl">速度 (m/s)</span><span class="val" id="speed">--</span></div>
-            <div class="row"><span class="lbl">当前模式</span><span class="val"><span class="badge badge-idle" id="modeLabel">空闲</span></span></div>
-        </div>
-    </div>
-
-    <!-- 任务控制 -->
-    <div class="c" style="border-left:2px solid var(--orange)">
-        <div class="ch" style="color:var(--orange)"><span class="ch-icon">🧭</span> 任务控制</div>
-        <div class="cb">
-            <div class="row"><span class="lbl">当前任务</span><span class="val" id="missionName">无</span></div>
-            <div class="row"><span class="lbl">执行状态</span><span class="val" id="missionRunning">未运行</span></div>
-            <div class="row"><span class="lbl">任务进度</span><span class="val" id="missionProgress">--</span></div>
-            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-                <div style="font-size:13px;color:var(--orange);margin-bottom:6px;font-weight:700">选择预设路线:</div>
-                <div id="routeButtons"><span style="color:var(--dim);font-size:12px">加载中...</span></div>
-                <button class="btn btn-stop" id="btnCancelMission" style="display:none;margin-top:6px;font-size:13px">取消当前任务</button>
+            <div class="spotlight spotlight-scene">
+                <div class="spotlight-label">港区名称</div>
+                <div class="spotlight-main">周口港</div>
+                <div class="spotlight-sub">无人集卡风险评估与安全预警平台</div>
+            </div>
+            <div class="row"><span class="lbl">接入状态</span><span class="val-sm">已接入 / 在线</span></div>
+            <div class="row"><span class="lbl">数据来源</span><span class="val-sm">车辆终端 / 平台服务 / 风险引擎</span></div>
+            <div class="row"><span class="lbl">监测对象</span><span class="val-sm">无人集卡、港区道路、重点风险区域</span></div>
+            <div class="row"><span class="lbl">业务状态</span><span class="val-sm">运行中 / 监测中 / 预警联动</span></div>
+            <div class="panel-note">
+                面向周口港业务运行场景，持续展示车辆接入、风险态势、重点区域预警与处置状态。
             </div>
         </div>
     </div>
 
-    <!-- 车辆控制 -->
-    <div class="c" style="border-left:2px solid var(--blue)">
-        <div class="ch" style="color:var(--blue)"><span class="ch-icon">🎮</span> 车辆控制</div>
+    <div class="c card-agv">
+        <div class="ch"><span class="ch-index">02</span> 无人集卡实时状态</div>
+        <div class="cb">
+            <div class="spotlight">
+                <div class="spotlight-label">车辆运行状态</div>
+                <div class="spotlight-main"><span class="badge badge-idle" id="modeLabel">待命</span></div>
+                <div class="spotlight-sub">车辆编号 YK-AGV-001 · 无人集卡</div>
+            </div>
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <span class="lbl">经度</span>
+                    <span class="val" id="posX">--</span>
+                </div>
+                <div class="metric-box">
+                    <span class="lbl">纬度</span>
+                    <span class="val" id="posY">--</span>
+                </div>
+                <div class="metric-box">
+                    <span class="lbl">航向角</span>
+                    <span class="val" id="heading">--</span>
+                </div>
+                <div class="metric-box">
+                    <span class="lbl">行驶速度</span>
+                    <span class="val" id="speed">--</span>
+                </div>
+            </div>
+            <div class="panel-note">
+                接入车辆: <strong>YK-AGV-001</strong><br>
+                车辆类型: <strong>无人集卡</strong><br>
+                运行状态: <strong>实时监测</strong>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- ═══ Center Stage: sim strip + map ═══ -->
+<div class="left">
+    <div class="sim">
+        <div class="sim-blk">
+            <div class="sim-lbl">港区环境</div>
+            <div class="sim-val sim-emphasis">周口港</div>
+            <div class="sim-sub">无人集卡运行区域 · 重点风险区域监测</div>
+        </div>
+        <div class="sim-blk">
+            <div class="sim-lbl">接入状态</div>
+            <div><span class="badge badge-online" id="simOdom">在线</span></div>
+            <div class="sim-sub">车辆在线与定位回传</div>
+        </div>
+        <div class="sim-blk">
+            <div class="sim-lbl">数据来源</div>
+            <div class="sim-val" id="dataSource">--</div>
+            <div class="sim-sub">车辆终端 / 平台服务</div>
+        </div>
+        <div class="sim-blk">
+            <div class="sim-lbl">风险态势</div>
+            <div class="sim-val" id="simRiskState">低风险</div>
+            <div class="sim-sub">实时风险融合结果</div>
+        </div>
+        <div class="sim-blk">
+            <div class="sim-lbl">业务状态</div>
+            <div class="sim-val" id="simMissionState">监测中</div>
+            <div class="sim-sub">运行监测与预警联动</div>
+        </div>
+    </div>
+
+    <div class="map-stage">
+        <div class="stage-titlebar">
+            <div>
+                <div class="stage-kicker">港区实时态势</div>
+                <div class="stage-name">周口港重点区域总览</div>
+            </div>
+            <div class="stage-caption">无人集卡运行与风险监测视图</div>
+        </div>
+
+        <div id="map">
+            <div class="map-badge">周口港 · 港区风险监测区域</div>
+            <div class="map-prov" id="mapProviderBadge" title="切换底图视图">底图: 港区态势图</div>
+
+            <div class="stage-overlay stage-overlay-left">
+                <div class="hud-module">
+                    <span class="hud-label">运行状态</span>
+                    <span class="hud-value" id="stageModeText">待命</span>
+                </div>
+                <div class="hud-module">
+                    <span class="hud-label">业务状态</span>
+                    <span class="hud-value" id="stageMissionText">监测中</span>
+                </div>
+            </div>
+
+            <div class="stage-overlay stage-overlay-right">
+                <div class="hud-module">
+                    <span class="hud-label">位置坐标</span>
+                    <span class="hud-value" id="stagePosText">经度 -- · 纬度 --</span>
+                </div>
+                <div class="hud-module">
+                    <span class="hud-label">行驶速度</span>
+                    <span class="hud-value" id="stageSpeedText">-- m/s</span>
+                </div>
+                <div class="hud-module">
+                    <span class="hud-label">风险等级</span>
+                    <span class="hud-chip hud-risk-low" id="stageRiskText">低风险</span>
+                </div>
+                <div class="hud-module">
+                    <span class="hud-label">数据源</span>
+                    <span class="hud-value" id="stageSourceText">平台接入中</span>
+                </div>
+            </div>
+
+            <div class="stage-footer-hud">
+                <span class="footer-chip">态势</span>
+                <span>周口港重点区域实时监测 · 无人集卡运行状态持续更新</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Right: mission + control ═══ -->
+<div class="right">
+    <div class="c card-mission">
+        <div class="ch"><span class="ch-index">03</span> 任务控制</div>
+        <div class="cb">
+            <div class="spotlight">
+                <div class="spotlight-label">当前任务</div>
+                <div class="spotlight-main" id="missionName">无</div>
+                <div class="spotlight-sub">执行状态: <span id="missionRunning">未运行</span> · 任务进度: <span id="missionProgress">--</span></div>
+            </div>
+            <div class="subpanel">
+                <div class="route-title">选择任务路线</div>
+                <div id="routeButtons"><span style="color:var(--dim);font-size:12px">加载中...</span></div>
+                <button class="btn btn-stop" id="btnCancelMission" style="display:none;margin-top:10px">取消当前任务</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="c card-control">
+        <div class="ch"><span class="ch-index">04</span> 车辆控制</div>
         <div class="cb">
             <div class="cg">
                 <div></div>
@@ -244,38 +1464,39 @@
                 <button class="btn" data-action="speed_down" title="S">▼ 后退</button>
                 <div></div>
             </div>
-            <button class="btn btn-stop" id="btnEmergencyStop" title="Esc" style="margin-bottom:4px;font-size:13px">紧急停车</button>
-            <button class="btn" data-action="reset_all" title="Q" style="width:100%;font-size:13px">重置控制</button>
-            <div style="color:var(--dim);font-size:11px;margin-top:6px;text-align:center">W/S/A/D 移动 · 空格停车 · R 归正 · Q 重置 · Esc 急停</div>
+            <button class="btn btn-stop" id="btnEmergencyStop" title="Esc" style="margin-bottom:8px">紧急停车</button>
+            <button class="btn" data-action="reset_all" title="Q" style="width:100%">重置控制</button>
+            <div class="control-note">支持方向控制、归正、紧急停车与状态重置</div>
         </div>
     </div>
-
 </div>
 
 <!-- ═══ Bottom: risk + alerts + system + layers ═══ -->
 <div class="bot">
-    <!-- 风险评估 (tall — span 2 rows) -->
-    <div class="c c-tall" id="riskCard">
-        <div class="ch" style="color:var(--yellow)"><span class="ch-icon">⚠️</span> 风险评估</div>
+    <div class="c c-tall card-risk" id="riskCard">
+        <div class="ch"><span class="ch-index">05</span> 风险评估</div>
         <div class="cb">
-            <div style="text-align:center;padding:4px 0 8px">
-                <span class="badge badge-lg badge-safe" id="riskLevelBadge">低风险</span>
+            <div class="risk-hero">
+                <div>
+                    <div class="risk-score-label">综合风险指数</div>
+                    <div class="risk-score-value" id="riskScore">0.000</div>
+                </div>
+                <div><span class="badge badge-lg badge-safe" id="riskLevelBadge">低风险</span></div>
             </div>
-            <div class="row"><span class="lbl">风险分数</span><span class="val" id="riskScore" style="font-size:18px">0.000</span></div>
-            <div class="rtrack" style="height:6px"><div class="rfill" id="riskBar" style="width:0%;background:var(--green)"></div></div>
-            <div class="row" style="margin-top:6px"><span class="lbl">地面风险值</span><span class="val" id="terrainRisk">--</span></div>
+            <div class="rtrack"><div class="rfill" id="riskBar" style="width:0%;background:var(--green)"></div></div>
+            <div class="row" style="margin-top:8px"><span class="lbl">地面风险值</span><span class="val" id="terrainRisk">--</span></div>
             <div class="row"><span class="lbl">形变梯度</span><span class="val" id="gradientMag">--</span></div>
-            <div style="margin-top:6px;padding:6px 8px;border-radius:4px;font-size:12px;line-height:1.5;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15)" id="riskReasonBox">
+            <div class="subpanel" id="riskReasonBox">
                 <div style="color:var(--dim);font-size:11px;margin-bottom:2px">风险原因</div>
                 <span id="riskReason" style="color:var(--text)">正常运行</span>
             </div>
-            <div style="margin-top:6px;padding:6px 8px;border-radius:4px;font-size:12px;background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.15)" id="insarSummaryBox">
-                <div style="color:var(--dim);font-size:11px;margin-bottom:2px">InSAR 形变 <span style="font-size:10px;color:var(--dim)" id="insarMockTag">(示例数据)</span></div>
-                <div class="row"><span class="lbl">形变速率</span><span class="val" id="insarVelocity" style="font-size:14px">-- mm/yr</span></div>
+            <div class="subpanel" id="insarSummaryBox">
+                <div style="color:var(--dim);font-size:11px;margin-bottom:2px">地表形变监测 <span style="font-size:10px;color:var(--dim)" id="insarMockTag">(监测数据)</span></div>
+                <div class="row"><span class="lbl">形变速率</span><span class="val" id="insarVelocity" style="font-size:15px">-- mm/yr</span></div>
                 <div class="row"><span class="lbl">形变梯度</span><span class="val-sm" id="insarGradient">--</span></div>
                 <div class="row"><span class="lbl">风险带</span><span class="badge badge-idle" id="insarRiskBand">--</span></div>
             </div>
-            <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">
+            <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
                 <div style="font-size:11px;color:var(--dim);margin-bottom:3px">风险范围图例</div>
                 <div class="lgr"><div class="lgsw" style="background:var(--green)"></div>低风险 (0 ~ 0.3)</div>
                 <div class="lgr"><div class="lgsw" style="background:var(--yellow)"></div>中风险 (0.3 ~ 0.7)</div>
@@ -284,9 +1505,8 @@
         </div>
     </div>
 
-    <!-- 最近告警 (tall — span 2 rows) -->
-    <div class="c c-tall">
-        <div class="ch"><span class="ch-icon">🔔</span> 最近告警</div>
+    <div class="c c-tall card-alerts">
+        <div class="ch"><span class="ch-index">06</span> 最近告警</div>
         <div class="cb">
             <div class="al" id="alertList">
                 <div style="color:var(--dim);font-size:12px;text-align:center;padding:10px">暂无告警</div>
@@ -294,34 +1514,60 @@
         </div>
     </div>
 
-    <!-- 系统状态 (compact — 1 row) -->
-    <div class="c c-compact">
-        <div class="ch"><span class="ch-icon">🖥️</span> 系统状态</div>
+    <div class="c c-compact card-system">
+        <div class="ch"><span class="ch-index">07</span> 港区车辆总览</div>
         <div class="cb">
-            <div class="row"><span class="lbl">后端服务</span><span class="badge badge-online" id="sysBackend">在线</span></div>
-            <div class="row"><span class="lbl">ROS2 节点</span><span class="badge badge-offline" id="sysRos2">离线</span></div>
-            <div class="row"><span class="lbl">WebSocket</span><span class="badge badge-online" id="sysWs">已连接</span></div>
-            <div class="row"><span class="lbl">运行时长</span><span class="val" id="sysUptime">--</span></div>
-            <div class="row"><span class="lbl">活跃主车</span><span class="val-sm">agv_ackermann</span></div>
+            <div class="fleet-stats">
+                <div class="fleet-stat">
+                    <div class="fleet-stat-label">接入车辆</div>
+                    <div class="fleet-stat-value" id="fleetStatTotal">0</div>
+                </div>
+                <div class="fleet-stat">
+                    <div class="fleet-stat-label">在线车辆</div>
+                    <div class="fleet-stat-value" id="fleetStatOnline">0</div>
+                </div>
+                <div class="fleet-stat">
+                    <div class="fleet-stat-label">作业中</div>
+                    <div class="fleet-stat-value" id="fleetStatActive">0</div>
+                </div>
+                <div class="fleet-stat">
+                    <div class="fleet-stat-label">预警车辆</div>
+                    <div class="fleet-stat-value" id="fleetStatAlert">0</div>
+                </div>
+            </div>
+            <div class="fleet-list" id="fleetList">
+                <div class="fleet-empty">车辆总览加载中...</div>
+            </div>
+            <div class="fleet-focus">
+                <div class="fleet-focus-label">当前关注车辆</div>
+                <div class="fleet-focus-main">
+                    <span id="fleetFocusVehicle">YK-AGV-001</span>
+                    <span class="badge badge-online fleet-chip" id="fleetFocusOnline">在线</span>
+                </div>
+                <div class="fleet-focus-meta">
+                    <span id="fleetFocusZone">周口港重点监测区</span>
+                    <span class="badge badge-safe fleet-chip" id="fleetFocusRisk">低风险</span>
+                    <span id="fleetFocusTask">待命</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- 图层控制 (compact — 1 row) -->
-    <div class="c c-compact">
-        <div class="ch"><span class="ch-icon">🗺️</span> 图层控制</div>
+    <div class="c c-compact card-layers">
+        <div class="ch"><span class="ch-index">08</span> 图层显示</div>
         <div class="cb">
-            <label class="lrow"><input type="checkbox" id="toggleTrajectory" checked> 显示轨迹</label>
+            <label class="lrow"><input type="checkbox" id="toggleTrajectory" checked> 车辆轨迹</label>
             <label class="lrow"><input type="checkbox" id="toggleHeatmap" checked> 风险热力图</label>
-            <label class="lrow"><input type="checkbox" id="toggleInsarHeatmap"> InSAR 形变图层</label>
-            <label class="lrow"><input type="checkbox" id="toggleInsarZones"> InSAR 风险分区</label>
-            <label class="lrow"><input type="checkbox" id="toggleGrid"> 坐标网格</label>
-            <div style="margin-top:6px;padding:6px 8px;border-radius:4px;font-size:11px;color:var(--text2);background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.15)">
-                当前主场景: <span style="color:var(--cyan)">{{ scene_context.profile }}</span><br>
-                风险热力图已对齐 400m 边界；仍属于 synthetic 兼容层，Zone A/B/C 依据 deformation 参数标注。
+            <label class="lrow"><input type="checkbox" id="toggleInsarHeatmap"> 形变监测图层</label>
+            <label class="lrow"><input type="checkbox" id="toggleInsarZones"> 重点风险分区</label>
+            <label class="lrow"><input type="checkbox" id="toggleGrid"> 参考网格</label>
+            <div class="subpanel">
+                当前港区: <span style="color:var(--cyan)">周口港</span><br>
+                风险热力图与重点区域标识已加载，可按需切换显示。
             </div>
-            <div style="display:flex;gap:4px;margin-top:6px">
-                <button class="btn" id="btnClearTrajectory" style="flex:1;font-size:12px">清除轨迹</button>
-                <button class="btn" id="btnResetDemo" style="flex:1;font-size:12px">重置演示</button>
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn" id="btnClearTrajectory" style="flex:1">清除轨迹</button>
+                <button class="btn" id="btnResetDemo" style="flex:1">重置场景</button>
             </div>
         </div>
     </div>
@@ -335,8 +1581,8 @@
 
 <!-- Footer -->
 <div class="ft">
-    <div><span style="cursor:pointer" id="btnToggleLog">系统日志</span> · agv_ackermann · 主场景: <code style="font-size:.9em">{{ scene_context.profile }}</code> · 启动: <code style="font-size:.9em">scripts/start_all.sh</code></div>
-    <div><span id="bottomTime">--</span> · 港口 AGV 数字孪生 v1.0</div>
+    <div><span class="footer-link" id="btnToggleLog">系统日志</span> · 周口港 · 无人集卡安全预警平台</div>
+    <div><span id="bottomTime">--</span> · 港口数字孪生系统 v1.0</div>
 </div>
 
 </div>
@@ -346,6 +1592,13 @@
 // 配置
 // ═══════════════════════════════════════════════════════════════
 const SCENE_CONTEXT = {{ scene_context | tojson }};
+const DISPLAY_ALIAS = {
+    siteName: '周口港',
+    vehicleName: 'YK-AGV-001',
+    sourceRos2: '车辆终端',
+    sourceFallback: '平台服务',
+};
+const FOCUS_ZONE_NAME = '周口港重点监测区';
 const CONFIG = {
     mapCenter: [0, 0],
     mapZoom: 1,
@@ -365,10 +1618,10 @@ const CONFIG = {
 // URL 参数: ?provider=osm  或 ?provider=carto
 
 const MAP_PROVIDERS = {
-    simple: { label: '仿真平面', crs: L.CRS.Simple, center: [0,0], zoom: 1, minZoom: -3, maxZoom: 6, tile: null },
-    osm:    { label: 'OpenStreetMap (参考)', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
+    simple: { label: '港区态势图', crs: L.CRS.Simple, center: [0,0], zoom: 1, minZoom: -3, maxZoom: 6, tile: null },
+    osm:    { label: '标准地图参考', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
               tile: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; OpenStreetMap' },
-    carto:  { label: 'CartoDB 暗色 (参考)', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
+    carto:  { label: '夜景地图参考', crs: null, center: [1.2821,103.858], zoom: 16, minZoom: 10, maxZoom: 19,
               tile: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '&copy; CARTO' },
 };
 
@@ -392,6 +1645,8 @@ function xyToLatLng(x, y) { return simToLatLng(x, y); }
 // ═══════════════════════════════════════════════════════════════
 let socket=null, wsConnected=false, agvMarker=null, trajectoryPolyline=null,
     heatmapLayer=null, gridLayer=null, sceneOverlayLayer=null, trajectoryPoints=[], alertItems=[], logLines=[], tileLayer=null;
+let selectedVehicleId = DISPLAY_ALIAS.vehicleName;
+let fleetState = createInitialFleetState();
 
 // ═══════════════════════════════════════════════════════════════
 // 地图初始化
@@ -400,15 +1655,47 @@ const prov = MAP_PROVIDERS[currentProvider];
 const mapOpts = { minZoom: prov.minZoom, maxZoom: prov.maxZoom, zoomControl: true };
 if (prov.crs) mapOpts.crs = prov.crs;
 const map = L.map('map', mapOpts).setView(prov.center, prov.zoom);
+const MAP_PANES = {
+    base: 'stage-base-pane',
+    area: 'stage-area-pane',
+    corridor: 'stage-corridor-pane',
+    risk: 'stage-risk-pane',
+    track: 'stage-track-pane',
+    vehicle: 'stage-vehicle-pane',
+    label: 'stage-label-pane',
+    grid: 'stage-grid-pane',
+};
+[
+    [MAP_PANES.base, 310, 'none'],
+    [MAP_PANES.area, 330, 'auto'],
+    [MAP_PANES.grid, 340, 'none'],
+    [MAP_PANES.corridor, 360, 'auto'],
+    [MAP_PANES.risk, 390, 'auto'],
+    [MAP_PANES.track, 430, 'none'],
+    [MAP_PANES.vehicle, 470, 'auto'],
+    [MAP_PANES.label, 520, 'none'],
+].forEach(([name, zIndex, pointerEvents]) => {
+    const pane = map.createPane(name);
+    pane.style.zIndex = zIndex;
+    pane.style.pointerEvents = pointerEvents;
+});
+const STAGE_RENDERER = {
+    base: L.svg({pane: MAP_PANES.base}),
+    area: L.svg({pane: MAP_PANES.area}),
+    corridor: L.svg({pane: MAP_PANES.corridor}),
+    risk: L.svg({pane: MAP_PANES.risk}),
+    track: L.svg({pane: MAP_PANES.track}),
+    grid: L.svg({pane: MAP_PANES.grid}),
+};
 
 let tileOk = false;
 if (prov.tile) {
-    tileLayer = L.tileLayer(prov.tile, { attribution: prov.attr || '' });
+    tileLayer = L.tileLayer(prov.tile, { attribution: prov.attr || '', opacity: .34, className: 'stage-tile-layer' });
     // Fallback: if tiles fail to load, switch to simple background
     tileLayer.on('tileerror', function() {
         if (!tileOk) {
-            console.warn('底图加载失败，回退到仿真平面模式');
-            document.getElementById('mapProviderBadge').textContent = '底图: 仿真平面 (回退)';
+            console.warn('底图加载失败，回退到港区态势图');
+            document.getElementById('mapProviderBadge').textContent = '底图: 港区态势图 (回退)';
         }
     });
     tileLayer.on('tileload', function() { tileOk = true; });
@@ -418,24 +1705,171 @@ if (prov.tile) {
     _drawSimpleBackground();
 }
 
+function rectFromCenter(center, size, padX = 0, padY = 0) {
+    const [cx, cy] = center;
+    const [sx, sy] = size;
+    return [[cy - sy / 2 - padY, cx - sx / 2 - padX], [cy + sy / 2 + padY, cx + sx / 2 + padX]];
+}
+function addStageLabel(latlng, title, subtitle = '', variant = 'stage-label-accent') {
+    const sub = subtitle ? `<small>${subtitle}</small>` : '';
+    return L.marker(latlng, {
+        pane: MAP_PANES.label,
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({
+            className: '',
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
+            html: `<div class="stage-label ${variant}">${title}${sub}</div>`,
+        }),
+    }).addTo(sceneOverlayLayer);
+}
+function drawCorridorBand(center, size, centerline, title, subtitle, tone) {
+    const palette = {
+        primary: { halo: '#52d8ff', haloFill: 'rgba(18, 112, 172, .18)', core: '#5fe7ff', coreFill: 'rgba(24, 144, 208, .28)', axis: '#bffcff' },
+        secondary: { halo: '#4cb5ff', haloFill: 'rgba(19, 84, 134, .16)', core: '#7bc8ff', coreFill: 'rgba(32, 114, 176, .22)', axis: '#95d8ff' },
+        connector: { halo: '#63c9ff', haloFill: 'rgba(20, 96, 148, .18)', core: '#9ae0ff', coreFill: 'rgba(43, 124, 180, .24)', axis: '#b8f2ff' },
+    }[tone];
+    L.rectangle(rectFromCenter(center, size, 8, 8), {
+        renderer: STAGE_RENDERER.corridor,
+        className: 'twin-corridor-halo',
+        color: palette.halo,
+        weight: 2.6,
+        opacity: .42,
+        fillColor: palette.haloFill,
+        fillOpacity: .62,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(rectFromCenter(center, size, 2, 2), {
+        renderer: STAGE_RENDERER.corridor,
+        className: 'twin-corridor-core',
+        color: palette.core,
+        weight: 1.6,
+        opacity: .88,
+        fillColor: palette.coreFill,
+        fillOpacity: .76,
+    }).addTo(sceneOverlayLayer);
+    L.polyline(centerline.map(([x, y]) => [y, x]), {
+        renderer: STAGE_RENDERER.corridor,
+        className: 'twin-corridor-axis',
+        color: palette.axis,
+        weight: 2.2,
+        opacity: .92,
+        dashArray: '10 8',
+        lineCap: 'round',
+        lineJoin: 'round',
+    }).addTo(sceneOverlayLayer);
+    const mid = centerline[Math.floor(centerline.length / 2)];
+    addStageLabel([mid[1], mid[0]], title, subtitle, 'stage-label-accent');
+}
+function drawRiskZoneRect(center, size, color, fill, title, subtitle) {
+    L.rectangle(rectFromCenter(center, size, 4, 4), {
+        renderer: STAGE_RENDERER.risk,
+        className: 'twin-risk-shell',
+        color,
+        weight: 2.2,
+        opacity: .5,
+        fillColor: fill,
+        fillOpacity: .2,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(rectFromCenter(center, size), {
+        renderer: STAGE_RENDERER.risk,
+        className: 'twin-risk-core',
+        color,
+        weight: 1.4,
+        opacity: .9,
+        fillColor: fill,
+        fillOpacity: .34,
+    }).addTo(sceneOverlayLayer);
+    addStageLabel([center[1], center[0]], title, subtitle, 'stage-label-risk');
+}
+
 function _drawSimpleBackground() {
     if(sceneOverlayLayer) map.removeLayer(sceneOverlayLayer);
     sceneOverlayLayer = L.layerGroup();
     const b = CONFIG.worldBounds;
     const southWest = [b.min_y, b.min_x];
     const northEast = [b.max_y, b.max_x];
+    const stageShell = [[b.min_y + 10, b.min_x + 10], [b.max_y - 14, b.max_x - 10]];
+    const operationsApron = rectFromCenter([0, 22], [304, 54]);
+    const yardArea = rectFromCenter([-18, -74], [170, 72]);
+    const stagingArea = rectFromCenter([114, -60], [88, 58]);
+    const gateArea = rectFromCenter([156, 18], [46, 44]);
+    const dockEdge = [
+        [58, -166],
+        [84, -138],
+        [96, 138],
+        [66, 166],
+        [48, 166],
+        [36, -166],
+    ];
 
     L.rectangle([southWest, northEast], {
-        color:'#0c1829', fillColor:'#0c1829', fillOpacity:1, weight:1, opacity:.8
+        renderer: STAGE_RENDERER.base,
+        className: 'twin-area-shell',
+        color:'#102132',
+        fillColor:'#060d17',
+        fillOpacity:1,
+        weight:2,
+        opacity:.95,
     }).addTo(sceneOverlayLayer);
-
-    const corridorStyle = { color:'#1d4ed8', fillColor:'#10233f', fillOpacity:.35, weight:1, opacity:.8 };
-    const markerStyle = (color, fill) => ({ color, fillColor:fill, fillOpacity:.3, weight:1, opacity:.9 });
-    const rectFromCenter = (center, size) => {
-        const [cx, cy] = center;
-        const [sx, sy] = size;
-        return [[cy - sy / 2, cx - sx / 2], [cy + sy / 2, cx + sx / 2]];
-    };
+    L.rectangle(stageShell, {
+        renderer: STAGE_RENDERER.base,
+        className: 'twin-area-shell',
+        color:'#163049',
+        fillColor:'rgba(7, 18, 34, .92)',
+        fillOpacity:.96,
+        weight:1.6,
+        opacity:.92,
+    }).addTo(sceneOverlayLayer);
+    L.polygon(dockEdge, {
+        renderer: STAGE_RENDERER.base,
+        className: 'twin-area-shell',
+        color:'#174767',
+        weight:1.6,
+        opacity:.34,
+        fillColor:'rgba(16, 62, 94, .26)',
+        fillOpacity:.52,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(operationsApron, {
+        renderer: STAGE_RENDERER.area,
+        className: 'twin-area-shell',
+        color:'#2c7a97',
+        weight:1.8,
+        opacity:.42,
+        fillColor:'rgba(18, 60, 84, .42)',
+        fillOpacity:.82,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(yardArea, {
+        renderer: STAGE_RENDERER.area,
+        className: 'twin-area-shell',
+        color:'#2e5973',
+        weight:1.6,
+        opacity:.34,
+        fillColor:'rgba(18, 37, 62, .74)',
+        fillOpacity:.9,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(stagingArea, {
+        renderer: STAGE_RENDERER.area,
+        className: 'twin-area-shell',
+        color:'#336d80',
+        weight:1.6,
+        opacity:.34,
+        fillColor:'rgba(13, 42, 58, .7)',
+        fillOpacity:.88,
+    }).addTo(sceneOverlayLayer);
+    L.rectangle(gateArea, {
+        renderer: STAGE_RENDERER.area,
+        className: 'twin-area-shell',
+        color:'#4a7f8c',
+        weight:1.4,
+        opacity:.36,
+        fillColor:'rgba(22, 51, 58, .72)',
+        fillOpacity:.88,
+    }).addTo(sceneOverlayLayer);
+    addStageLabel([22, -18], '港机作业区', '装卸作业面', 'stage-label-accent');
+    addStageLabel([-74, -24], '集装箱堆场', '核心堆存区', 'stage-label-subtle');
+    addStageLabel([-60, 110], '车辆待命区', '调度缓冲', 'stage-label-subtle');
+    addStageLabel([18, 150], '港区接入点', '车辆出入', 'stage-label-subtle');
 
     const corridors = SCENE_CONTEXT.corridors || {};
     const mainCorridor = corridors.main_test_corridor || {};
@@ -451,47 +1885,78 @@ function _drawSimpleBackground() {
         (connectorPolyline[0][0] + connectorPolyline[1][0]) / 2,
         (connectorPolyline[0][1] + connectorPolyline[1][1]) / 2,
     ];
-
-    L.rectangle(rectFromCenter(
+    drawCorridorBand(
         [(mainCenterline[0][0] + mainCenterline[1][0]) / 2, mainCenterline[0][1]],
-        [Math.abs(mainCenterline[1][0] - mainCenterline[0][0]), mainWidth]
-    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('主测试走廊', {permanent:false});
-    L.rectangle(rectFromCenter(
+        [Math.abs(mainCenterline[1][0] - mainCenterline[0][0]), mainWidth],
+        mainCenterline,
+        '主通行走廊',
+        '车辆主运行带',
+        'primary'
+    );
+    drawCorridorBand(
         [(secondaryCenterline[0][0] + secondaryCenterline[1][0]) / 2, secondaryCenterline[0][1]],
-        [Math.abs(secondaryCenterline[1][0] - secondaryCenterline[0][0]), secondaryWidth]
-    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('副测试走廊', {permanent:false});
-    L.rectangle(rectFromCenter(
+        [Math.abs(secondaryCenterline[1][0] - secondaryCenterline[0][0]), secondaryWidth],
+        secondaryCenterline,
+        '辅助通行走廊',
+        '次级运行带',
+        'secondary'
+    );
+    drawCorridorBand(
         connectorCenter,
-        [connectorWidth, Math.abs(connectorPolyline[1][1] - connectorPolyline[0][1])]
-    ), corridorStyle).addTo(sceneOverlayLayer).bindTooltip('闭环连接段', {permanent:false});
+        [connectorWidth, Math.abs(connectorPolyline[1][1] - connectorPolyline[0][1])],
+        connectorPolyline,
+        '港区联络通道',
+        '区域切换带',
+        'connector'
+    );
 
     const zones = SCENE_CONTEXT.zones || {};
     const zoneA = zones.zone_A || {};
     const zoneB = zones.zone_B || {};
     const zoneC = zones.zone_C || {};
-    L.rectangle(
-        rectFromCenter(zoneA.center_xy || [-20, 10], zoneA.size_m || [40, 14]),
-        markerStyle('#06b6d4', 'rgba(6,182,212,.25)')
-    ).addTo(sceneOverlayLayer).bindTooltip('Zone A: 均匀缓慢沉降', {permanent:false});
-    L.rectangle(
-        rectFromCenter(zoneB.center_xy || [35, 10], zoneB.size_m || [50, 14]),
-        markerStyle('#f97316', 'rgba(249,115,22,.25)')
-    ).addTo(sceneOverlayLayer).bindTooltip('Zone B: 差异沉降 / 斜坡区', {permanent:false});
-    L.circle([ (zoneC.center_xy || [0, -40])[1], (zoneC.center_xy || [0, -40])[0] ], Object.assign(
-        { radius: zoneC.radius_m || 2 },
-        markerStyle('#ef4444', 'rgba(239,68,68,.25)')
-    )).addTo(sceneOverlayLayer).bindTooltip('Zone C: 局部突变陷阱区', {permanent:false});
+    drawRiskZoneRect(zoneA.center_xy || [-20, 10], zoneA.size_m || [40, 14], '#4cf4d2', 'rgba(55, 235, 195, .22)', '重点关注区 A', '低风险监测');
+    drawRiskZoneRect(zoneB.center_xy || [35, 10], zoneB.size_m || [50, 14], '#ffb24d', 'rgba(255, 167, 61, .26)', '重点关注区 B', '中风险预警');
+    const zoneCCenter = zoneC.center_xy || [0, -40];
+    const zoneCRadius = zoneC.radius_m || 2;
+    L.circle([zoneCCenter[1], zoneCCenter[0]], {
+        renderer: STAGE_RENDERER.risk,
+        className: 'twin-risk-shell',
+        radius: zoneCRadius + 7,
+        color:'#ff7b61',
+        weight:2.2,
+        opacity:.48,
+        fillColor:'rgba(255, 102, 84, .2)',
+        fillOpacity:.24,
+    }).addTo(sceneOverlayLayer);
+    L.circle([zoneCCenter[1], zoneCCenter[0]], {
+        renderer: STAGE_RENDERER.risk,
+        className: 'twin-risk-core',
+        radius: zoneCRadius + 2,
+        color:'#ff8f73',
+        weight:1.6,
+        opacity:.95,
+        fillColor:'rgba(255, 104, 74, .34)',
+        fillOpacity:.36,
+    }).addTo(sceneOverlayLayer);
+    addStageLabel([zoneCCenter[1], zoneCCenter[0]], '重点关注区 C', '高风险预警', 'stage-label-risk');
 
     const landmarksCfg = SCENE_CONTEXT.landmarks || {};
     const landmarks = [
-        { name: 'AGV Spawn', pose: landmarksCfg.agv_spawn_pose_xyzrpy || [20, 12, 0.58, 0, 0, 0], color: '#22c55e' },
-        { name: 'Port Crane', pose: landmarksCfg.port_crane_pose_xyzrpy || [-60, 32, 0, 0, 0, 0], color: '#60a5fa' },
-        { name: 'Container Stack', pose: landmarksCfg.container_stack_pose_xyzrpy || [-30.84, -76.44, 0, 0, 0, 0], color: '#f59e0b' },
+        { name: '车辆接入点', pose: landmarksCfg.agv_spawn_pose_xyzrpy || [20, 12, 0.58, 0, 0, 0], color: '#22c55e' },
+        { name: '港机作业区', pose: landmarksCfg.port_crane_pose_xyzrpy || [-60, 32, 0, 0, 0, 0], color: '#60a5fa' },
+        { name: '集装箱堆场', pose: landmarksCfg.container_stack_pose_xyzrpy || [-30.84, -76.44, 0, 0, 0, 0], color: '#f59e0b' },
     ];
     landmarks.forEach(item => {
         L.circleMarker([item.pose[1], item.pose[0]], {
-            radius: 4, color: item.color, fillColor: item.color, fillOpacity: .8, weight: 1
-        }).addTo(sceneOverlayLayer).bindTooltip(item.name, {permanent:false});
+            renderer: STAGE_RENDERER.area,
+            pane: MAP_PANES.label,
+            radius: 5,
+            color: item.color,
+            fillColor: item.color,
+            fillOpacity: .88,
+            weight: 1.2,
+        }).addTo(sceneOverlayLayer);
+        addStageLabel([item.pose[1], item.pose[0]], item.name, '', 'stage-label-subtle');
     });
 
     const yardBlocks = Array.isArray(landmarksCfg.yard_blocks) ? landmarksCfg.yard_blocks : [];
@@ -499,39 +1964,50 @@ function _drawSimpleBackground() {
         const bx = block.x ?? 0;
         const upperY = block.upper_y ?? -8;
         const lowerY = block.lower_y ?? -22;
-        [
-            { y: upperY, label: `${block.name} 上排` },
-            { y: lowerY, label: `${block.name} 下排` },
-        ].forEach(item => {
-            L.circleMarker([item.y, bx], {
-                radius: 3, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: .85, weight: 1
-            }).addTo(sceneOverlayLayer).bindTooltip(item.label, {permanent:false});
-        });
+        L.rectangle([[lowerY - 8, bx - 8], [upperY + 8, bx + 8]], {
+            renderer: STAGE_RENDERER.area,
+            className: 'twin-area-shell',
+            color:'#8c6d2e',
+            weight:1,
+            opacity:.28,
+            fillColor:'rgba(161, 104, 35, .2)',
+            fillOpacity:.32,
+        }).addTo(sceneOverlayLayer);
+        addStageLabel([upperY - 2, bx], block.name, '堆场', 'stage-label-subtle');
     });
 
     const stackCoreInstances = Array.isArray(landmarksCfg.stack_core_instances) ? landmarksCfg.stack_core_instances : [];
     stackCoreInstances.forEach(stack => {
         const pose = stack.pose_xyzrpy || [0, 0, 0, 0, 0, 0];
         L.circleMarker([pose[1], pose[0]], {
-            radius: 5, color: '#fb923c', fillColor: '#fb923c', fillOpacity: .85, weight: 1
-        }).addTo(sceneOverlayLayer).bindTooltip(`${stack.name} 高堆区`, {permanent:false});
+            renderer: STAGE_RENDERER.area,
+            radius: 6,
+            color: '#fb923c',
+            fillColor: '#fb923c',
+            fillOpacity: .92,
+            weight: 1.2,
+        }).addTo(sceneOverlayLayer);
+        addStageLabel([pose[1], pose[0]], `${stack.name}`, '高堆区', 'stage-label-subtle');
     });
 
-    for (let v = -200; v <= 200; v += 20) {
-        L.polyline([[b.min_y, v], [b.max_y, v]], { color:'#162036', weight:1, opacity:.35 }).addTo(sceneOverlayLayer);
-        L.polyline([[v, b.min_x], [v, b.max_x]], { color:'#162036', weight:1, opacity:.35 }).addTo(sceneOverlayLayer);
-    }
-
     L.circleMarker([0, 0], {
-        radius:4, color:'#3b82f6', fillColor:'#3b82f6', fillOpacity:.6, weight:1
-    }).addTo(sceneOverlayLayer).bindTooltip('仿真原点 (0,0)', {permanent:false, direction:'right'});
+        renderer: STAGE_RENDERER.base,
+        radius:4,
+        color:'#3b82f6',
+        fillColor:'#3b82f6',
+        fillOpacity:.7,
+        weight:1,
+    }).addTo(sceneOverlayLayer);
+    addStageLabel([0, 0], '港区参考点', '0,0', 'stage-label-subtle');
 
     L.marker([185, -195], {
         icon: L.divIcon({
             className:'',
-            html:`<span style="color:#64748b;font-size:10px;white-space:nowrap">${SCENE_CONTEXT.profile}</span>`,
+            html:`<span style="color:#64748b;font-size:10px;white-space:nowrap">${DISPLAY_ALIAS.siteName}</span>`,
             iconAnchor:[0, 0]
-        })
+        }),
+        pane: MAP_PANES.label,
+        interactive: false,
     }).addTo(sceneOverlayLayer);
 
     sceneOverlayLayer.addTo(map);
@@ -552,22 +2028,188 @@ document.getElementById('mapProviderBadge').addEventListener('click', () => {
 // AGV icon
 const agvIcon = L.divIcon({
     className:'agv-marker',
-    html:'<div class="agv-icon-inner" style="width:30px;height:30px;background:var(--cyan);border:2px solid #fff;border-radius:50%;box-shadow:0 0 14px rgba(6,182,212,.7);display:flex;align-items:center;justify-content:center;font-size:15px;transition:transform .1s linear">&#128666;</div>',
-    iconSize:[30,30], iconAnchor:[15,15],
+    html:`<div class="agv-stage-marker">
+        <span class="agv-pulse"></span>
+        <span class="agv-halo"></span>
+        <div class="agv-marker-rotor">
+            <span class="agv-direction"></span>
+            <div class="agv-body">
+                <span class="agv-cabin"></span>
+            </div>
+        </div>
+        <div class="agv-label">当前车辆</div>
+    </div>`,
+    iconSize:[68,68], iconAnchor:[34,34],
 });
 
-trajectoryPolyline = L.polyline([], { color:'#3b82f6', weight:3, opacity:.7 }).addTo(map);
+let trajectoryGlow = L.polyline([], {
+    renderer: STAGE_RENDERER.track,
+    pane: MAP_PANES.track,
+    className:'twin-track-halo',
+    color:'rgba(93,232,255,.18)',
+    weight:12,
+    opacity:.56,
+    lineCap:'round',
+    lineJoin:'round',
+}).addTo(map);
+trajectoryPolyline = L.polyline([], {
+    renderer: STAGE_RENDERER.track,
+    pane: MAP_PANES.track,
+    className:'twin-track-core',
+    color:'#98f4ff',
+    weight:4.2,
+    opacity:.96,
+    lineCap:'round',
+    lineJoin:'round',
+}).addTo(map);
 
 // ═══════════════════════════════════════════════════════════════
 // 中文映射
 // ═══════════════════════════════════════════════════════════════
-const MODE_CN={idle:'空闲',manual:'手动',mission:'任务执行中'};
+const MODE_CN={idle:'待命',manual:'人工接管',mission:'任务执行中'};
 const MODE_BADGE={idle:'badge-idle',manual:'badge-manual',mission:'badge-mission'};
 const RISK_LEVEL_CN={low:'低风险',medium:'中风险',high:'高风险'};
 const RISK_BADGE={low:'badge-safe',medium:'badge-warn',high:'badge-danger'};
 const RISK_BAR_COLOR={low:'var(--green)',medium:'var(--yellow)',high:'var(--red)'};
 const RISK_BOX_STYLE={safe:{bg:'rgba(34,197,94,.06)',border:'rgba(34,197,94,.15)'},warn:{bg:'rgba(234,179,8,.06)',border:'rgba(234,179,8,.15)'},danger:{bg:'rgba(239,68,68,.06)',border:'rgba(239,68,68,.15)'}};
+const HUD_RISK_CLASS={low:'hud-risk-low',medium:'hud-risk-medium',high:'hud-risk-high'};
 function riskStateToLevel(rs){return{safe:'low',warn:'medium',danger:'high'}[rs]||'low'}
+function setTextIfPresent(id,text){const el=document.getElementById(id);if(el)el.textContent=text}
+function setBadgeIfPresent(id,text,cls){const el=document.getElementById(id);if(el){el.textContent=text;el.className=cls}}
+function modeToTaskStatus(mode){return({idle:'待命',manual:'人工接管',mission:'作业中'})[mode]||'待命'}
+function taskBadgeClass(task){
+    return({
+        '作业中':'badge badge-mission fleet-chip',
+        '人工接管':'badge badge-manual fleet-chip',
+        '待命':'badge badge-idle fleet-chip',
+        '离线':'badge badge-offline fleet-chip',
+    })[task]||'badge badge-idle fleet-chip';
+}
+function riskBadgeClass(level){
+    return({
+        '低风险':'badge badge-safe fleet-chip',
+        '中风险':'badge badge-warn fleet-chip',
+        '高风险':'badge badge-danger fleet-chip',
+        '--':'badge badge-idle fleet-chip',
+    })[level]||'badge badge-idle fleet-chip';
+}
+function createInitialFleetState(){
+    return [
+        {
+            vehicle_id: DISPLAY_ALIAS.vehicleName,
+            display_name: '无人集卡01',
+            online: false,
+            task_status: '待命',
+            risk_level: '低风险',
+            speed: 0,
+            longitude: null,
+            latitude: null,
+            zone_name: FOCUS_ZONE_NAME,
+            last_update: '',
+        },
+        {
+            vehicle_id: 'YK-AGV-002',
+            display_name: '无人集卡02',
+            online: true,
+            task_status: '待命',
+            risk_level: '低风险',
+            speed: 0,
+            longitude: 114.650280,
+            latitude: 33.631920,
+            zone_name: '周口港作业缓冲区',
+            last_update: '最近 12 秒',
+        },
+        {
+            vehicle_id: 'YK-AGV-003',
+            display_name: '无人集卡03',
+            online: true,
+            task_status: '作业中',
+            risk_level: '中风险',
+            speed: 0.8,
+            longitude: 114.651130,
+            latitude: 33.632310,
+            zone_name: '周口港重点监测区',
+            last_update: '最近 5 秒',
+        },
+        {
+            vehicle_id: 'YK-AGV-004',
+            display_name: '无人集卡04',
+            online: false,
+            task_status: '离线',
+            risk_level: '--',
+            speed: null,
+            longitude: null,
+            latitude: null,
+            zone_name: '周口港待命区',
+            last_update: '离线',
+        },
+    ];
+}
+function getFleetVehicle(vehicleId){return fleetState.find(v=>v.vehicle_id===vehicleId)}
+function updateFleetVehicle(vehicleId, patch){
+    let found=false;
+    fleetState=fleetState.map(v=>{
+        if(v.vehicle_id!==vehicleId)return v;
+        found=true;
+        return {...v,...patch};
+    });
+    if(!found)fleetState.push({vehicle_id:vehicleId,display_name:vehicleId,zone_name:FOCUS_ZONE_NAME,...patch});
+}
+function renderFleetOverview(){
+    const total=fleetState.length;
+    const online=fleetState.filter(v=>v.online).length;
+    const active=fleetState.filter(v=>v.online&&v.task_status==='作业中').length;
+    const alert=fleetState.filter(v=>v.online&&v.risk_level&&v.risk_level!=='低风险'&&v.risk_level!=='--').length;
+    setTextIfPresent('fleetStatTotal',String(total));
+    setTextIfPresent('fleetStatOnline',String(online));
+    setTextIfPresent('fleetStatActive',String(active));
+    setTextIfPresent('fleetStatAlert',String(alert));
+
+    const list=document.getElementById('fleetList');
+    if(list){
+        if(!fleetState.length){
+            list.innerHTML='<div class="fleet-empty">暂无车辆数据</div>';
+        }else{
+            list.innerHTML=fleetState.map(v=>{
+                const onlineText=v.online?'在线':'离线';
+                const taskText=v.online?(v.task_status||'待命'):'离线';
+                const riskText=v.online?(v.risk_level||'低风险'):'--';
+                const speedText=v.online&&typeof v.speed==='number'?`${v.speed.toFixed(1)} m/s`:'--';
+                return `<div class="fleet-row ${v.vehicle_id===selectedVehicleId?'is-selected':''}" data-vehicle-id="${escHtml(v.vehicle_id)}">
+                    <div class="fleet-row-top">
+                        <div class="fleet-id-wrap">
+                            <span class="fleet-id">${escHtml(v.vehicle_id)}</span>
+                            <span class="fleet-focus-tag">当前关注</span>
+                        </div>
+                        <span class="fleet-speed">${escHtml(speedText)}</span>
+                    </div>
+                    <div class="fleet-row-badges">
+                        <span class="badge ${v.online?'badge-online':'badge-offline'} fleet-chip">${onlineText}</span>
+                        <span class="${taskBadgeClass(taskText)}">${taskText}</span>
+                        <span class="${riskBadgeClass(riskText)}">${riskText}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    const focusVehicle=getFleetVehicle(selectedVehicleId)||fleetState[0];
+    if(focusVehicle){
+        const focusOnline=focusVehicle.online?'在线':'离线';
+        const focusTask=focusVehicle.online?(focusVehicle.task_status||'待命'):'离线';
+        const focusRisk=focusVehicle.online?(focusVehicle.risk_level||'低风险'):'--';
+        setTextIfPresent('fleetFocusVehicle',focusVehicle.vehicle_id);
+        setTextIfPresent('fleetFocusZone',focusVehicle.zone_name||FOCUS_ZONE_NAME);
+        setTextIfPresent('fleetFocusTask',focusTask);
+        setBadgeIfPresent('fleetFocusOnline',focusOnline,`badge ${focusVehicle.online?'badge-online':'badge-offline'} fleet-chip`);
+        setBadgeIfPresent('fleetFocusRisk',focusRisk,riskBadgeClass(focusRisk));
+    }
+}
+function setSelectedVehicle(vehicleId){
+    if(!getFleetVehicle(vehicleId))return;
+    selectedVehicleId=vehicleId;
+    renderFleetOverview();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // WebSocket
@@ -575,8 +2217,8 @@ function riskStateToLevel(rs){return{safe:'low',warn:'medium',danger:'high'}[rs]
 function connectSocketIO(){
     updateWsStatus('connecting');
     socket=io({transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionAttempts:Infinity});
-    socket.on('connect',()=>{wsConnected=true;updateWsStatus('connected');addLog('info','WebSocket 已连接')});
-    socket.on('disconnect',()=>{wsConnected=false;updateWsStatus('disconnected');addLog('warn','WebSocket 连接已断开')});
+    socket.on('connect',()=>{wsConnected=true;updateWsStatus('connected');addLog('info','数据通道已连接')});
+    socket.on('disconnect',()=>{wsConnected=false;updateWsStatus('disconnected');addLog('warn','数据通道连接已断开')});
     socket.on('connect_error',()=>{wsConnected=false;updateWsStatus('disconnected')});
     socket.on('agv_state',(d)=>{updateAGVState(d)});
     socket.on('risk_state',(d)=>{updateRiskState(d)});
@@ -589,32 +2231,47 @@ function connectSocketIO(){
 // UI 更新
 // ═══════════════════════════════════════════════════════════════
 function updateWsStatus(s){
-    const el=document.getElementById('statusWs'),dot=document.getElementById('dotWs'),sw=document.getElementById('sysWs');
-    if(s==='connected'){el.textContent='已连接';dot.className='dot dg';sw.textContent='已连接';sw.className='badge badge-online'}
-    else if(s==='disconnected'){el.textContent='已断开';dot.className='dot dr';sw.textContent='已断开';sw.className='badge badge-offline'}
-    else{el.textContent='连接中…';dot.className='dot dy';sw.textContent='连接中';sw.className='badge badge-idle'}
+    const el=document.getElementById('statusWs'),dot=document.getElementById('dotWs');
+    if(s==='connected'){if(el)el.textContent='已连接';if(dot)dot.className='dot dg'}
+    else if(s==='disconnected'){if(el)el.textContent='已断开';if(dot)dot.className='dot dr'}
+    else{if(el)el.textContent='连接中…';if(dot)dot.className='dot dy'}
 }
 
 function updateAGVOnMap(x,y,heading){
     const ll=simToLatLng(x,y);
-    if(!agvMarker){agvMarker=L.marker(ll,{icon:agvIcon}).addTo(map);agvMarker.bindPopup('AGV-001 (Ackermann)')}
+    if(!agvMarker){agvMarker=L.marker(ll,{icon:agvIcon,pane:MAP_PANES.vehicle,keyboard:false}).addTo(map);agvMarker.bindPopup(`无人集卡 ${DISPLAY_ALIAS.vehicleName}`)}
     else{agvMarker.setLatLng(ll)}
-    if(agvMarker._icon){const inner=agvMarker._icon.querySelector('.agv-icon-inner');if(inner)inner.style.transform=`rotate(${heading}deg)`}
+    if(agvMarker._icon){
+        const rotor=agvMarker._icon.querySelector('.agv-marker-rotor');
+        if(rotor)rotor.style.transform=`translate(-50%,-50%) rotate(${heading}deg)`;
+    }
     trajectoryPoints.push(ll);if(trajectoryPoints.length>CONFIG.maxTrajectoryPoints)trajectoryPoints.shift();
+    trajectoryGlow.setLatLngs(trajectoryPoints);
     trajectoryPolyline.setLatLngs(trajectoryPoints);
 }
 
 function updateAGVState(d){
     if(d.position){
-        document.getElementById('posX').textContent=d.position.x.toFixed(2);
-        document.getElementById('posY').textContent=d.position.y.toFixed(2);
+        document.getElementById('posX').textContent=d.position.x.toFixed(6);
+        document.getElementById('posY').textContent=d.position.y.toFixed(6);
+        setTextIfPresent('stagePosText',`经度 ${d.position.x.toFixed(6)} · 纬度 ${d.position.y.toFixed(6)}`);
     }
     if(d.orientation)document.getElementById('heading').textContent=d.orientation.yaw.toFixed(1);
-    if(d.speed!==undefined)document.getElementById('speed').textContent=d.speed.toFixed(3);
-    if(d.mode){const el=document.getElementById('modeLabel');el.textContent=MODE_CN[d.mode]||d.mode;el.className='badge '+(MODE_BADGE[d.mode]||'badge-idle')}
-    if(d.source){document.getElementById('dataSource').textContent=d.source==='ros2'?'ROS2 实时':'模拟 (Mock)'}
+    if(d.orientation)setTextIfPresent('stageModeText',MODE_CN[d.mode]||d.mode||'待命');
+    if(d.speed!==undefined){document.getElementById('speed').textContent=d.speed.toFixed(3);setTextIfPresent('stageSpeedText',`${d.speed.toFixed(3)} m/s`)}
+    if(d.mode){const el=document.getElementById('modeLabel');el.textContent=MODE_CN[d.mode]||d.mode;el.className='badge '+(MODE_BADGE[d.mode]||'badge-idle');setTextIfPresent('stageModeText',MODE_CN[d.mode]||d.mode)}
+    if(d.source){const sourceText=d.source==='ros2'?DISPLAY_ALIAS.sourceRos2:DISPLAY_ALIAS.sourceFallback;document.getElementById('dataSource').textContent=sourceText;setTextIfPresent('stageSourceText',sourceText)}
     if(d.source==='ros2'){document.getElementById('simOdom').textContent='在线';document.getElementById('simOdom').className='badge badge-online'}
     if(d.position&&d.orientation){updateAGVOnMap(d.position.x,d.position.y,d.orientation.yaw)}
+    updateFleetVehicle(DISPLAY_ALIAS.vehicleName,{
+        online:true,
+        task_status:modeToTaskStatus(d.mode),
+        speed:typeof d.speed==='number'?d.speed:0,
+        longitude:d.position?d.position.x:null,
+        latitude:d.position?d.position.y:null,
+        last_update:d.timestamp||new Date().toISOString(),
+    });
+    renderFleetOverview();
 }
 
 function updateRiskState(d){
@@ -622,22 +2279,30 @@ function updateRiskState(d){
     const badge=document.getElementById('riskLevelBadge');badge.textContent=levelCn;badge.className='badge '+(RISK_BADGE[level]||'badge-safe');
     document.getElementById('riskScore').textContent=score.toFixed(3);
     const bar=document.getElementById('riskBar');bar.style.width=(score*100)+'%';bar.style.background=RISK_BAR_COLOR[level]||'var(--green)';
+    setTextIfPresent('simRiskState',levelCn);
+    const stageRisk=document.getElementById('stageRiskText');if(stageRisk){stageRisk.textContent=levelCn;stageRisk.className='hud-chip '+(HUD_RISK_CLASS[level]||'hud-risk-low')}
     if(d.terrain_risk!==undefined)document.getElementById('terrainRisk').textContent=d.terrain_risk.toFixed(3);
     if(d.gradient_mag!==undefined)document.getElementById('gradientMag').textContent=d.gradient_mag.toFixed(5);
     const reasons=d.reasons||[];document.getElementById('riskReason').textContent=reasons.length>0?reasons.join('; '):'正常运行';
     const box=document.getElementById('riskReasonBox'),st=RISK_BOX_STYLE[rs]||RISK_BOX_STYLE.safe;box.style.background=st.bg;box.style.borderColor=st.border;
     const card=document.getElementById('riskCard');card.style.borderColor=rs==='danger'?'var(--red)':rs==='warn'?'var(--yellow)':'var(--border)';
+    updateFleetVehicle(DISPLAY_ALIAS.vehicleName,{risk_level:levelCn});
+    renderFleetOverview();
 }
 
 function updateSystemStatus(d){
-    const bE=document.getElementById('sysBackend'),bD=document.getElementById('dotBackend'),bS=document.getElementById('statusBackend');
-    if(d.backend==='online'){bE.textContent='在线';bE.className='badge badge-online';bD.className='dot dg';bS.textContent='在线'}
-    else{bE.textContent='离线';bE.className='badge badge-offline';bD.className='dot dr';bS.textContent='离线'}
-    const rE=document.getElementById('sysRos2'),rD=document.getElementById('dotRos2'),rS=document.getElementById('statusRos2');
-    if(d.ros2==='online'){rE.textContent='在线';rE.className='badge badge-online';rD.className='dot dg';rS.textContent='在线';document.getElementById('simOdom').textContent='在线';document.getElementById('simOdom').className='badge badge-online'}
-    else{rE.textContent='离线';rE.className='badge badge-offline';rD.className='dot dr';rS.textContent='离线'}
-    if(d.uptime_s!==undefined){const m=Math.floor(d.uptime_s/60),s=Math.floor(d.uptime_s%60);document.getElementById('sysUptime').textContent=`${m}分${s}秒`}
+    const bD=document.getElementById('dotBackend'),bS=document.getElementById('statusBackend');
+    if(d.backend==='online'){if(bD)bD.className='dot dg';if(bS)bS.textContent='在线'}
+    else{if(bD)bD.className='dot dr';if(bS)bS.textContent='离线'}
+    const rD=document.getElementById('dotRos2'),rS=document.getElementById('statusRos2');
+    if(d.ros2==='online'){if(rD)rD.className='dot dg';if(rS)rS.textContent='在线';document.getElementById('simOdom').textContent='在线';document.getElementById('simOdom').className='badge badge-online'}
+    else{if(rD)rD.className='dot dr';if(rS)rS.textContent='离线';document.getElementById('simOdom').textContent='离线';document.getElementById('simOdom').className='badge badge-offline'}
     if(d.last_update)document.getElementById('statusLastUpdate').textContent=new Date(d.last_update).toLocaleTimeString('zh-CN');
+    updateFleetVehicle(DISPLAY_ALIAS.vehicleName,{
+        online:d.ros2==='online',
+        last_update:d.last_update||'',
+    });
+    renderFleetOverview();
 }
 
 function updateMissionStatus(d){
@@ -646,8 +2311,14 @@ function updateMissionStatus(d){
     document.getElementById('missionName').textContent=d.route_name||'无';
     document.getElementById('missionRunning').textContent=running?'运行中':'未运行';
     document.getElementById('missionProgress').textContent=running?`${d.waypoint_index||0}/${d.total_waypoints||0} 航点`:'--';
+    setTextIfPresent('simMissionState',running?(d.route_name||'任务执行中'):'监测中');
+    setTextIfPresent('stageMissionText',running?`${d.route_name||'任务执行中'} · ${d.waypoint_index||0}/${d.total_waypoints||0}`:'监测中');
     document.getElementById('btnCancelMission').style.display=running?'block':'none';
     document.querySelectorAll('.rbtn').forEach(b=>{b.classList.toggle('active',running&&b.dataset.route===d.route_name)});
+    updateFleetVehicle(DISPLAY_ALIAS.vehicleName,{
+        task_status:running?'作业中':modeToTaskStatus(mode),
+    });
+    renderFleetOverview();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -676,6 +2347,10 @@ function addLog(level,msg){
 }
 document.getElementById('btnToggleLog').addEventListener('click',()=>{document.getElementById('logPanel').classList.toggle('open')});
 document.getElementById('btnCloseLog').addEventListener('click',()=>{document.getElementById('logPanel').classList.remove('open')});
+document.getElementById('fleetList').addEventListener('click',(e)=>{
+    const row=e.target.closest('.fleet-row');
+    if(row)setSelectedVehicle(row.dataset.vehicleId);
+});
 
 // ═══════════════════════════════════════════════════════════════
 // REST 轮询
@@ -688,7 +2363,7 @@ async function fetchVehicleState(){
         updateAGVState(d);
     }catch(e){}
 }
-async function fetchTrajectory(){try{const r=await fetch('/trajectory');const d=await r.json();if(Array.isArray(d)){trajectoryPoints=d.map(p=>simToLatLng(p.x,p.y));trajectoryPolyline.setLatLngs(trajectoryPoints)}}catch(e){}}
+async function fetchTrajectory(){try{const r=await fetch('/trajectory');const d=await r.json();if(Array.isArray(d)){trajectoryPoints=d.map(p=>simToLatLng(p.x,p.y));trajectoryGlow.setLatLngs(trajectoryPoints);trajectoryPolyline.setLatLngs(trajectoryPoints)}}catch(e){}}
 async function fetchHeatmap(){
     try{
         const r=await fetch('/risk/heatmap');const data=await r.json();
@@ -696,7 +2371,7 @@ async function fetchHeatmap(){
         let hd=[];
         if(data.type==='FeatureCollection'){data.features.forEach(f=>{const c=f.geometry.coordinates;hd.push([c[1],c[0],f.properties.risk||.5])})}
         else if(Array.isArray(data)){hd=data.map(p=>[...simToLatLng(p.x,p.y),p.risk||.5])}
-        if(hd.length>0){heatmapLayer=L.heatLayer(hd,{radius:25,blur:15,maxZoom:prov.maxZoom,max:1,gradient:{0:'#22c55e',.3:'#84cc16',.5:'#eab308',.7:'#f97316',1:'#ef4444'}}).addTo(map)}
+        if(hd.length>0){heatmapLayer=L.heatLayer(hd,{pane:MAP_PANES.risk,radius:36,blur:24,maxZoom:prov.maxZoom,max:1,minOpacity:.36,gradient:{0:'#2dd4bf',.25:'#65f3b4',.52:'#ffd44f',.74:'#ff9e4a',1:'#ff5f7f'}}).addTo(map)}
     }catch(e){}
 }
 async function loadRoutes(){
@@ -739,12 +2414,20 @@ document.getElementById('btnCancelMission').addEventListener('click',()=>{fetch(
 // ═══════════════════════════════════════════════════════════════
 // 图层
 // ═══════════════════════════════════════════════════════════════
-document.getElementById('toggleTrajectory').addEventListener('change',(e)=>{e.target.checked?map.addLayer(trajectoryPolyline):map.removeLayer(trajectoryPolyline)});
+document.getElementById('toggleTrajectory').addEventListener('change',(e)=>{
+    if(e.target.checked){
+        map.addLayer(trajectoryGlow);
+        map.addLayer(trajectoryPolyline);
+    }else{
+        map.removeLayer(trajectoryGlow);
+        map.removeLayer(trajectoryPolyline);
+    }
+});
 document.getElementById('toggleHeatmap').addEventListener('change',(e)=>{if(heatmapLayer){e.target.checked?map.addLayer(heatmapLayer):map.removeLayer(heatmapLayer)}});
 document.getElementById('toggleGrid').addEventListener('change',(e)=>{if(e.target.checked){createGrid();map.addLayer(gridLayer)}else if(gridLayer){map.removeLayer(gridLayer)}});
-function createGrid(){if(gridLayer)map.removeLayer(gridLayer);const b=map.getBounds(),lines=[],step=10;for(let lat=Math.floor(b.getSouth()/step)*step;lat<=b.getNorth();lat+=step)lines.push([[lat,b.getWest()],[lat,b.getEast()]]);for(let lng=Math.floor(b.getWest()/step)*step;lng<=b.getEast();lng+=step)lines.push([[b.getSouth(),lng],[b.getNorth(),lng]]);gridLayer=L.polyline(lines,{color:'#2a3f5f',weight:1,opacity:.4})}
-document.getElementById('btnClearTrajectory').addEventListener('click',async()=>{trajectoryPoints=[];trajectoryPolyline.setLatLngs([]);try{await fetch('/trajectory/clear',{method:'POST'})}catch(e){}});
-document.getElementById('btnResetDemo').addEventListener('click',async()=>{try{await fetch('/api/demo/reset',{method:'POST'});trajectoryPoints=[];trajectoryPolyline.setLatLngs([]);alertItems=[];renderAlerts();addLog('info','演示数据已重置')}catch(e){}});
+function createGrid(){if(gridLayer)map.removeLayer(gridLayer);const b=map.getBounds(),lines=[],step=10;for(let lat=Math.floor(b.getSouth()/step)*step;lat<=b.getNorth();lat+=step)lines.push([[lat,b.getWest()],[lat,b.getEast()]]);for(let lng=Math.floor(b.getWest()/step)*step;lng<=b.getEast();lng+=step)lines.push([[b.getSouth(),lng],[b.getNorth(),lng]]);gridLayer=L.polyline(lines,{renderer:STAGE_RENDERER.grid,pane:MAP_PANES.grid,className:'twin-grid-line',color:'#3f6689',weight:1.1,opacity:.26,lineCap:'round',lineJoin:'round'})}
+document.getElementById('btnClearTrajectory').addEventListener('click',async()=>{trajectoryPoints=[];trajectoryGlow.setLatLngs([]);trajectoryPolyline.setLatLngs([]);try{await fetch('/trajectory/clear',{method:'POST'})}catch(e){}});
+document.getElementById('btnResetDemo').addEventListener('click',async()=>{try{await fetch('/api/demo/reset',{method:'POST'});trajectoryPoints=[];trajectoryGlow.setLatLngs([]);trajectoryPolyline.setLatLngs([]);alertItems=[];renderAlerts();fleetState=createInitialFleetState();selectedVehicleId=DISPLAY_ALIAS.vehicleName;renderFleetOverview();addLog('info','场景数据已重置')}catch(e){}});
 
 // ═══════════════════════════════════════════════════════════════
 // InSAR 形变图层
@@ -775,12 +2458,12 @@ async function fetchInsarHeatmap(){
         if(insarHeatLayer)map.removeLayer(insarHeatLayer);
         if(!d.points||!d.points.length)return;
         const pts=d.points.map(p=>{const c=insarToMapCoord(p.lat,p.lng);return[c[0],c[1],p.value]});
-        insarHeatLayer=L.heatLayer(pts,{radius:18,blur:12,maxZoom:prov.maxZoom,max:1,
+        insarHeatLayer=L.heatLayer(pts,{pane:MAP_PANES.risk,radius:20,blur:14,maxZoom:prov.maxZoom,max:1,minOpacity:.28,
             gradient:{0:'#06b6d4',.3:'#3b82f6',.5:'#8b5cf6',.7:'#d946ef',1:'#ef4444'}
         });
         if(document.getElementById('toggleInsarHeatmap').checked)insarHeatLayer.addTo(map);
-        addLog('info',`InSAR 形变图层已加载 (${d.count} 点, mock=${d.is_mock})`);
-        if(d.is_mock)document.getElementById('insarMockTag').textContent='(示例数据)';
+        addLog('info',`形变监测图层已加载 (${d.count} 点)`);
+        if(d.is_mock)document.getElementById('insarMockTag').textContent='(监测数据)';
         else document.getElementById('insarMockTag').textContent='(实测数据)';
     }catch(e){console.error('InSAR heatmap error:',e)}
 }
@@ -808,7 +2491,8 @@ async function fetchInsarRiskZones(){
         const colors={high:'rgba(239,68,68,.35)',medium:'rgba(234,179,8,.25)',low:'rgba(34,197,94,.15)'};
         const borders={high:'#ef4444',medium:'#eab308',low:'#22c55e'};
         insarZonesLayer=L.geoJSON(gj,{
-            style:f=>{const lv=f.properties.risk_level||'low';return{fillColor:colors[lv],color:borders[lv],weight:1,fillOpacity:.6}},
+            pane:MAP_PANES.risk,
+            style:f=>{const lv=f.properties.risk_level||'low';return{fillColor:colors[lv],color:borders[lv],weight:1.6,opacity:.82,fillOpacity:.48}},
             coordsToLatLng:c=>currentProvider==='simple'?L.latLng(c[1],c[0]):L.latLng(c[1],c[0]),
         });
         if(document.getElementById('toggleInsarZones').checked)insarZonesLayer.addTo(map);
@@ -842,14 +2526,18 @@ document.getElementById('toggleInsarZones').addEventListener('change',(e)=>{
     if(!insarZonesLayer){fetchInsarRiskZones();return}
     e.target.checked?insarZonesLayer.addTo(map):map.removeLayer(insarZonesLayer);
 });
+map.on('moveend zoomend',()=>{
+    if(document.getElementById('toggleGrid').checked)createGrid();
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 初始化
 // ═══════════════════════════════════════════════════════════════
 setInterval(()=>{document.getElementById('bottomTime').textContent=new Date().toLocaleString('zh-CN')},1000);
+renderFleetOverview();
 
 async function initialize(){
-    addLog('info','驾驶舱初始化中…');
+    addLog('info','平台初始化中…');
     connectSocketIO();
     await fetchTrajectory();
     await fetchHeatmap();
@@ -862,7 +2550,7 @@ async function initialize(){
     fetchInsarRiskZones();
     queryInsarAtAGV();
     setInterval(queryInsarAtAGV,5000);
-    addLog('info','驾驶舱初始化完成');
+    addLog('info','平台初始化完成');
 }
 initialize();
 </script>
