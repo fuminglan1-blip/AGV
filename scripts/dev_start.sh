@@ -14,19 +14,51 @@
 set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-COMMON_ENV="$SCRIPT_DIR/common_env.sh"
 
 echo "════════════════════════════════════════════"
 echo "  港口 AGV 数字孪生 — 开发环境启动"
 echo "════════════════════════════════════════════"
 
-# ── 1. 加载统一环境 ──
-source "$COMMON_ENV"
-echo "✓ ROS2 环境已加载: ${ROS_DISTRO:-${AGV_ROS_DISTRO_SELECTED:-unknown}}"
-if [ "${AGV_WS_SETUP_LOADED:-0}" -eq 1 ]; then
-    echo "✓ 工作空间 overlay 已加载: ${AGV_WS_SETUP}"
+# ── 1. 检查 ROS2 环境 ──
+# Runtime detection keeps this script compatible with Ubuntu 24.04 / ROS2 Jazzy.
+resolve_ros_setup() {
+    local distro=""
+    if [ -n "${ROS_DISTRO:-}" ] && [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+        distro="${ROS_DISTRO}"
+    elif [ -f "/opt/ros/jazzy/setup.bash" ]; then
+        distro="jazzy"
+    else
+        distro="$(ls /opt/ros 2>/dev/null | head -n1 || true)"
+    fi
+
+    if [ -z "$distro" ] || [ ! -f "/opt/ros/${distro}/setup.bash" ]; then
+        echo ""
+        echo "✗ 错误: 找不到 ROS2 setup.bash（/opt/ros/<distro>/setup.bash）"
+        echo "  请先安装 ROS2（Ubuntu 24.04 推荐 Jazzy）"
+        return 1
+    fi
+
+    export ROS_DISTRO="$distro"
+    echo "/opt/ros/${distro}/setup.bash"
+}
+
+ROS_SETUP_FILE="$(resolve_ros_setup)"
+source "$ROS_SETUP_FILE"
+echo "✓ ROS2 ${ROS_DISTRO} 已加载"
+
+# ── 2. 查找 overlay (统一路径变量) ──
+OVERLAY_SETUP=""
+if [ -f "$SRC_DIR/install/setup.bash" ]; then
+    OVERLAY_SETUP="$SRC_DIR/install/setup.bash"
+elif [ -f "$SRC_DIR/../install/setup.bash" ]; then
+    OVERLAY_SETUP="$SRC_DIR/../install/setup.bash"
+fi
+
+if [ -n "$OVERLAY_SETUP" ]; then
+    source "$OVERLAY_SETUP"
+    echo "✓ 工作空间 overlay 已加载: $OVERLAY_SETUP"
 else
-    echo "⚠ 未找到本地 install/setup.bash — Gazebo 仿真前请先在当前机器上 colcon build"
+    echo "⚠ 未找到 install/setup.bash — 如果需要 Gazebo 仿真请先 colcon build"
     echo "  (Web 模式可正常使用)"
 fi
 
@@ -55,13 +87,6 @@ fi
 
 # ── Full / noattach 模式: tmux 多窗口 ──
 
-if [ "${AGV_WS_SETUP_LOADED:-0}" -ne 1 ]; then
-    echo ""
-    echo "✗ 错误: 完整仿真链路需要本地工作空间 overlay。"
-    echo "  请先在当前机器执行: colcon build --symlink-install"
-    exit 1
-fi
-
 if ! command -v tmux &>/dev/null; then
     echo ""
     echo "✗ 错误: 需要 tmux。"
@@ -75,7 +100,12 @@ SESSION="agv_sim"
 # 清理旧 session
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 
-ROS_SETUP="source '$COMMON_ENV'"
+# 构建 overlay source 命令 (在 tmux 子窗口中复用)
+OVERLAY_CMD=""
+if [ -n "$OVERLAY_SETUP" ]; then
+    OVERLAY_CMD="source '$OVERLAY_SETUP'"
+fi
+ROS_SETUP="source '${ROS_SETUP_FILE}'; ${OVERLAY_CMD}"
 
 echo ""
 echo "模式: 完整仿真链路 (tmux)"
@@ -84,7 +114,7 @@ echo ""
 # ── Window 0: Gazebo ──
 tmux new-session -d -s "$SESSION" -n "gazebo"
 tmux send-keys -t "$SESSION:gazebo" \
-    "${ROS_SETUP}; cd '$SCRIPT_DIR'; echo '[Gazebo] 启动仿真...'; echo '  默认主场景: simplified_port_agv_terrain_400m'; echo '  legacy 兼容入口: harbour_diff_drive.launch.py'; echo '  当前主车/主链: agv_ackermann + /agv/*'; ./start_gazebo.sh" Enter
+    "${ROS_SETUP}; echo '[Gazebo] 启动仿真...'; ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py" Enter
 
 sleep 2
 

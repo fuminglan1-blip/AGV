@@ -7,38 +7,34 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${1:-interactive}"
-printf -v SCRIPT_DIR_Q '%q' "${SCRIPT_DIR}"
-printf -v MODE_Q '%q' "${MODE}"
-
-source "${SCRIPT_DIR}/common_env.sh"
-
-if [[ "${AGV_WS_SETUP_LOADED:-0}" -ne 1 ]]; then
-  echo "[start_all] Error: workspace overlay is not available on this machine." >&2
-  echo "[start_all] Run 'colcon build --symlink-install' before launching the full stack." >&2
-  exit 1
-fi
 
 if ! command -v gnome-terminal &>/dev/null; then
-  echo "Error: gnome-terminal not found. Use start_all_tmux.sh instead."
-  exit 1
+  echo "[start_all] gnome-terminal not found. Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
+fi
+
+if ! gnome-terminal --version >/dev/null 2>&1; then
+  echo "[start_all] gnome-terminal is not usable in this environment."
+  echo "[start_all] Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
 fi
 
 echo "[start_all] Launching full AGV simulation stack (controller mode: ${MODE})..."
-echo "[start_all] Default Gazebo scene: simplified_port_agv_terrain_400m"
-echo "[start_all] Cleaning up stale local processes before launch..."
-./stop_all.sh
 
 echo "[start_all] Opening Gazebo terminal..."
-gnome-terminal --title="AGV - Gazebo" -- bash -lc "cd ${SCRIPT_DIR_Q} && ./start_gazebo.sh; exec bash"
+if ! env -u LD_LIBRARY_PATH gnome-terminal --title="AGV - Gazebo" -- bash -lc "${SCRIPT_DIR}/start_gazebo.sh; exec bash"; then
+  echo "[start_all] Failed to open gnome-terminal. Falling back to tmux launcher..."
+  exec "${SCRIPT_DIR}/start_all_tmux.sh" "${MODE}"
+fi
 
 sleep 5
 
 echo "[start_all] Opening Controller terminal..."
-gnome-terminal --title="AGV - Controller (${MODE})" -- bash -lc "cd ${SCRIPT_DIR_Q} && ./start_controller.sh ${MODE_Q}; exec bash"
+env -u LD_LIBRARY_PATH gnome-terminal --title="AGV - Controller (${MODE})" -- bash -lc "${SCRIPT_DIR}/start_controller.sh ${MODE}; exec bash"
 
 sleep 2
 
 echo "[start_all] Opening Web Dashboard terminal..."
-gnome-terminal --title="AGV - Web Dashboard" -- bash -lc "cd ${SCRIPT_DIR_Q} && ./start_web_dashboard.sh; exec bash"
+env -u LD_LIBRARY_PATH gnome-terminal --title="AGV - Web Dashboard" -- bash -lc "${SCRIPT_DIR}/start_web_dashboard.sh; exec bash"
 
 echo "[start_all] All terminals launched. Dashboard will be at http://localhost:5000"

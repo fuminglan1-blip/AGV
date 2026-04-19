@@ -13,14 +13,28 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/common_env.sh"
+# Source ROS2
+resolve_ros_setup() {
+  local distro=""
+  if [[ -n "${ROS_DISTRO:-}" ]] && [[ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]]; then
+    distro="${ROS_DISTRO}"
+  elif [[ -f "/opt/ros/jazzy/setup.bash" ]]; then
+    distro="jazzy"
+  else
+    distro="$(ls /opt/ros 2>/dev/null | head -n1 || true)"
+  fi
 
-if [[ "${AGV_WS_SETUP_LOADED:-0}" -ne 1 ]]; then
-    echo -e "${RED}✗${NC} Missing workspace overlay at ${AGV_WS_SETUP}"
-    echo -e "${YELLOW}→${NC} Run 'colcon build --symlink-install' on this machine first"
-    exit 1
-fi
+  if [[ -z "${distro}" ]] || [[ ! -f "/opt/ros/${distro}/setup.bash" ]]; then
+    echo -e "${RED}✗${NC} ROS2 setup.bash not found under /opt/ros"
+    return 1
+  fi
+
+  export ROS_DISTRO="${distro}"
+  echo "/opt/ros/${distro}/setup.bash"
+}
+
+source "$(resolve_ros_setup)"
+source install/setup.bash
 
 echo "1. Checking ROS2 packages..."
 if ros2 pkg list | grep -q "harbour_assets_description"; then
@@ -32,17 +46,17 @@ fi
 
 echo ""
 echo "2. Checking ROS2 topics..."
-if ros2 topic list | grep -q "/agv/odometry"; then
-    echo -e "${GREEN}✓${NC} /agv/odometry topic exists"
+if ros2 topic list | grep -q "/diff_drive/odometry"; then
+    echo -e "${GREEN}✓${NC} /diff_drive/odometry topic exists"
 else
-    echo -e "${RED}✗${NC} /agv/odometry topic NOT found"
+    echo -e "${RED}✗${NC} /diff_drive/odometry topic NOT found"
     echo -e "${YELLOW}→${NC} Make sure Gazebo simulation is running"
 fi
 
-if ros2 topic list | grep -q "/agv/cmd_vel"; then
-    echo -e "${GREEN}✓${NC} /agv/cmd_vel topic exists"
+if ros2 topic list | grep -q "/diff_drive/cmd_vel"; then
+    echo -e "${GREEN}✓${NC} /diff_drive/cmd_vel topic exists"
 else
-    echo -e "${RED}✗${NC} /agv/cmd_vel topic NOT found"
+    echo -e "${RED}✗${NC} /diff_drive/cmd_vel topic NOT found"
 fi
 
 echo ""
@@ -65,13 +79,13 @@ else
 fi
 
 if [ -f "ros_gz_project_template/ros_gz_example_gazebo/worlds/harbour_diff_drive.sdf" ]; then
-    echo -e "${GREEN}✓${NC} harbour_diff_drive.sdf exists (historical filename, active vehicle is agv_ackermann)"
+    echo -e "${GREEN}✓${NC} harbour_diff_drive.sdf exists"
 else
     echo -e "${RED}✗${NC} harbour_diff_drive.sdf NOT found"
 fi
 
 if [ -f "ros_gz_project_template/ros_gz_example_bringup/launch/harbour_diff_drive.launch.py" ]; then
-    echo -e "${GREEN}✓${NC} harbour_diff_drive.launch.py exists (historical launch name for agv_ackermann)"
+    echo -e "${GREEN}✓${NC} harbour_diff_drive.launch.py exists"
 else
     echo -e "${RED}✗${NC} harbour_diff_drive.launch.py NOT found"
 fi
@@ -81,12 +95,8 @@ echo "=========================================="
 echo "Verification Complete"
 echo "=========================================="
 echo ""
-echo "Note: harbour_diff_drive.* is kept as a historical file name."
-echo "      Current runtime vehicle/topic chain is agv_ackermann + /agv/*."
-echo "      Default main scene is simplified_port_agv_terrain_400m."
-echo ""
 echo "To start the system:"
-echo "  1. Terminal 1: ros2 launch ros_gz_example_bringup simplified_port_agv_terrain_400m.launch.py"
+echo "  1. Terminal 1: ros2 launch ros_gz_example_bringup harbour_diff_drive.launch.py"
 echo "  2. Terminal 2: cd web_dashboard && ./start_server.sh"
 echo "  3. Browser: http://localhost:5000"
 echo ""
